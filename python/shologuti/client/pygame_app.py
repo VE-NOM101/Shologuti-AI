@@ -162,6 +162,29 @@ PIECE_RADIUS = 18
 BASE_RADIUS = 6
 
 
+# ---------------------------------------------------------------------------
+# Auth screen layout configuration
+# ---------------------------------------------------------------------------
+
+AUTH_PANEL_WIDTH = 520
+AUTH_FIELD_WIDTH = 360
+AUTH_FIELD_HEIGHT = 56
+AUTH_FIELD_SPACING = 40
+AUTH_PANEL_TOP_PADDING = 64
+AUTH_PANEL_BOTTOM_PADDING = 56
+AUTH_TITLE_GAP = 16
+AUTH_SUBTITLE_GAP = 28
+AUTH_FIELDS_GAP = 44
+AUTH_SUBMIT_GAP = 80
+AUTH_MESSAGE_GAP = 24
+AUTH_MESSAGE_HEIGHT = 52
+AUTH_SUBMIT_HEIGHT = 58
+AUTH_TOGGLE_HEIGHT = 46
+AUTH_TOGGLE_GAP = 16
+
+MENU_BUTTON_ANCHOR_Y = int(WINDOW_HEIGHT * 0.6)
+
+
 @dataclass
 class Button:
     key: str
@@ -264,6 +287,8 @@ class SixteenPygameApp:
             rect=pygame.Rect(0, 0, 0, 0),
             base_color=(96, 125, 139),
         )
+        self.auth_panel_rect = pygame.Rect(0, 0, AUTH_PANEL_WIDTH, 0)
+        self.auth_message_rect = pygame.Rect(0, 0, 0, 0)
         try:
             self.auth_client: Optional[FirebaseAuthClient] = FirebaseAuthClient()
         except FirebaseAuthError as exc:
@@ -307,7 +332,7 @@ class SixteenPygameApp:
         if self.current_user is not None:
             specs.append(("menu_logout", "Logout", (229, 57, 53)))
         total_height = len(specs) * button_height + max(len(specs) - 1, 0) * button_spacing
-        start_y = WINDOW_HEIGHT // 2 - total_height // 2
+        start_y = MENU_BUTTON_ANCHOR_Y - total_height // 2
         start_x = WINDOW_WIDTH // 2 - button_width // 2
         buttons: List[Button] = []
         for index, (key, label, color) in enumerate(specs):
@@ -358,54 +383,119 @@ class SixteenPygameApp:
         return ["name", "email", "password"]
 
     def _configure_auth_inputs(self) -> None:
-        field_width = 360
-        field_height = 48
-        spacing = 18
         fields = self._visible_auth_fields()
-        start_x = WINDOW_WIDTH // 2 - field_width // 2
-        total_height = len(fields) * field_height + max(len(fields) - 1, 0) * spacing
-        start_y = WINDOW_HEIGHT // 2 - total_height // 2
-
-        for index, key in enumerate(fields):
-            rect = pygame.Rect(
-                start_x,
-                start_y + index * (field_height + spacing),
-                field_width,
-                field_height,
-            )
-            self.auth_inputs[key].rect = rect
 
         for key, field in self.auth_inputs.items():
             if key not in fields:
                 field.active = False
 
-        submit_rect = pygame.Rect(
-            start_x,
-            start_y + len(fields) * (field_height + spacing) + 12,
-            field_width,
-            52,
-        )
-        toggle_rect = pygame.Rect(
-            start_x,
-            submit_rect.bottom + 12,
-            field_width,
-            44,
-        )
-        self.auth_submit_button.rect = submit_rect
-        self.auth_toggle_button.rect = toggle_rect
-
         if self.auth_mode == AuthMode.LOGIN:
             self.auth_submit_button.label = "Sign In"
             self.auth_submit_button.base_color = (30, 136, 229)
-            self.auth_toggle_button.label = "Need an account? Register"
+            self.auth_toggle_button.label = "Create a new account"
         else:
-            self.auth_submit_button.label = "Create Account"
+            self.auth_submit_button.label = "Sign Up & Play"
             self.auth_submit_button.base_color = (67, 160, 71)
-            self.auth_toggle_button.label = "Have an account? Sign In"
+            self.auth_toggle_button.label = "Back to Sign In"
         self.auth_toggle_button.base_color = (96, 125, 139)
 
         first_field = fields[0] if fields else None
         self._set_active_input(first_field)
+        self._layout_auth_controls()
+
+    def _layout_auth_controls(self) -> None:
+        fields = self._visible_auth_fields()
+
+        field_width = AUTH_FIELD_WIDTH
+        field_height = AUTH_FIELD_HEIGHT
+        spacing = AUTH_FIELD_SPACING
+        panel_width = AUTH_PANEL_WIDTH
+
+        title_height = self.font_large.get_height()
+        subtitle_height = self.font_small.get_height()
+        label_gap = self.font_small.get_height() + 10
+        fields_area = len(fields) * field_height + max(len(fields) - 1, 0) * spacing
+
+        content_height = (
+            AUTH_PANEL_TOP_PADDING
+            + title_height
+            + AUTH_TITLE_GAP
+            + subtitle_height
+            + AUTH_FIELDS_GAP
+            + label_gap
+            + fields_area
+            + AUTH_SUBMIT_GAP
+            + AUTH_SUBMIT_HEIGHT
+            + AUTH_TOGGLE_GAP
+            + AUTH_TOGGLE_HEIGHT
+            + AUTH_PANEL_BOTTOM_PADDING
+        )
+
+        panel_height = int(content_height)
+        panel_left = WINDOW_WIDTH // 2 - panel_width // 2
+        panel_top = WINDOW_HEIGHT // 2 - panel_height // 2
+        self.auth_panel_rect = pygame.Rect(panel_left, panel_top, panel_width, panel_height)
+
+        start_x = WINDOW_WIDTH // 2 - field_width // 2
+        fields_top = (
+            panel_top
+            + AUTH_PANEL_TOP_PADDING
+            + title_height
+            + AUTH_TITLE_GAP
+            + subtitle_height
+            + AUTH_FIELDS_GAP
+            + label_gap
+        )
+
+        for index, key in enumerate(fields):
+            rect = self.auth_inputs[key].rect
+            rect.update(
+                start_x,
+                int(fields_top + index * (field_height + spacing)),
+                field_width,
+                field_height,
+            )
+
+        offscreen_x = -9000
+        offscreen_y = -9000
+        for key, field in self.auth_inputs.items():
+            if key not in fields:
+                field.rect.update(offscreen_x, offscreen_y, 0, 0)
+
+        submit_top = fields_top + fields_area + AUTH_SUBMIT_GAP
+        self.auth_submit_button.rect.update(
+            start_x,
+            int(submit_top),
+            field_width,
+            AUTH_SUBMIT_HEIGHT,
+        )
+
+        toggle_top = self.auth_submit_button.rect.bottom + AUTH_TOGGLE_GAP
+        self.auth_toggle_button.rect.update(
+            start_x,
+            int(toggle_top),
+            field_width,
+            AUTH_TOGGLE_HEIGHT,
+        )
+
+        desired_message_top = self.auth_submit_button.rect.top - (AUTH_MESSAGE_GAP + AUTH_MESSAGE_HEIGHT)
+        minimum_message_top = fields_top + fields_area + 12
+        message_top = max(minimum_message_top, desired_message_top)
+        max_message_bottom = self.auth_submit_button.rect.top - 12
+        message_height = max(0, int(max_message_bottom - message_top))
+        if message_height > AUTH_MESSAGE_HEIGHT:
+            message_height = AUTH_MESSAGE_HEIGHT
+        self.auth_message_rect = pygame.Rect(
+            start_x,
+            int(message_top),
+            field_width,
+            message_height,
+        )
+
+        panel_bottom = self.auth_toggle_button.rect.bottom + AUTH_PANEL_BOTTOM_PADDING
+        new_height = int(panel_bottom - panel_top)
+        if new_height > self.auth_panel_rect.height:
+            self.auth_panel_rect.height = new_height
 
     def _set_active_input(self, key: Optional[str]) -> None:
         self.active_input_key = key
@@ -992,6 +1082,65 @@ class SixteenPygameApp:
         self._draw_highlights()
         self._draw_ui()
 
+    def _render_wrapped_text(
+        self,
+        text: str,
+        font: pygame.font.Font,
+        color: Tuple[int, int, int],
+        rect: pygame.Rect,
+        align: str = "left",
+        line_spacing: int = 4,
+        valign: str = "top",
+    ) -> int:
+        if not text or rect.height <= 0:
+            return rect.top
+
+        words = text.split()
+        if not words:
+            return rect.top
+
+        lines: List[str] = []
+        current_line = words[0]
+        max_width = rect.width
+
+        for word in words[1:]:
+            candidate = f"{current_line} {word}"
+            if font.size(candidate)[0] <= max_width:
+                current_line = candidate
+            else:
+                lines.append(current_line)
+                current_line = word
+        lines.append(current_line)
+
+        line_heights = [font.size(line)[1] for line in lines]
+        total_height = sum(line_heights) + line_spacing * (len(lines) - 1)
+
+        if valign == "center":
+            y = rect.centery - total_height // 2
+        elif valign == "bottom":
+            y = rect.bottom - total_height
+        else:
+            y = rect.top
+
+        y = max(rect.top, y)
+
+        for line in lines:
+            rendered = font.render(line, True, color)
+            if align == "center":
+                line_rect = rendered.get_rect(centerx=rect.centerx, top=y)
+            elif align == "right":
+                line_rect = rendered.get_rect(right=rect.right, top=y)
+            else:
+                line_rect = rendered.get_rect(left=rect.left, top=y)
+
+            if line_rect.bottom > rect.bottom:
+                break
+
+            self.screen.blit(rendered, line_rect)
+            y = line_rect.bottom + line_spacing
+
+        return y
+
     def _draw_menu(self) -> None:
         self.screen.fill((21, 34, 45))
         title_surface = self.font_large.render("Sixteen - A Game of Tradition", True, (236, 239, 241))
@@ -1020,21 +1169,23 @@ class SixteenPygameApp:
     def _draw_auth_screen(self) -> None:
         self.screen.fill((21, 34, 45))
 
-        panel_width = 480
-        panel_height = 520 if self.auth_mode == AuthMode.REGISTER else 460
-        panel_rect = pygame.Rect(
-            WINDOW_WIDTH // 2 - panel_width // 2,
-            WINDOW_HEIGHT // 2 - panel_height // 2,
-            panel_width,
-            panel_height,
-        )
+        panel_rect = self.auth_panel_rect
+        if panel_rect.height <= 0:
+            return
 
-        pygame.draw.rect(self.screen, (236, 239, 241), panel_rect, border_radius=18)
-        pygame.draw.rect(self.screen, (120, 144, 156), panel_rect, width=2, border_radius=18)
+        shadow_surface = pygame.Surface((panel_rect.width, panel_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow_surface, (0, 0, 0, 70), shadow_surface.get_rect(), border_radius=28)
+        self.screen.blit(shadow_surface, (panel_rect.x + 6, panel_rect.y + 8))
+
+        pygame.draw.rect(self.screen, (244, 245, 248), panel_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (176, 190, 197), panel_rect, width=2, border_radius=24)
+
+        accent_rect = pygame.Rect(panel_rect.x + 28, panel_rect.y + 24, panel_rect.width - 56, 6)
+        pygame.draw.rect(self.screen, (30, 136, 229), accent_rect, border_radius=3)
 
         title_text = "Sign in to play" if self.auth_mode == AuthMode.LOGIN else "Create your account"
         title_surface = self.font_large.render(title_text, True, (38, 50, 56))
-        title_rect = title_surface.get_rect(center=(WINDOW_WIDTH // 2, panel_rect.top + 80))
+        title_rect = title_surface.get_rect(midtop=(panel_rect.centerx, panel_rect.top + AUTH_PANEL_TOP_PADDING))
         self.screen.blit(title_surface, title_rect)
 
         if self.auth_mode == AuthMode.LOGIN:
@@ -1042,34 +1193,56 @@ class SixteenPygameApp:
         else:
             subtitle_text = "Just name, email, and password to get started"
         subtitle_surface = self.font_small.render(subtitle_text, True, (84, 110, 122))
-        subtitle_rect = subtitle_surface.get_rect(center=(WINDOW_WIDTH // 2, title_rect.bottom + 26))
+        subtitle_rect = subtitle_surface.get_rect(midtop=(panel_rect.centerx, title_rect.bottom + AUTH_TITLE_GAP))
         self.screen.blit(subtitle_surface, subtitle_rect)
 
         mouse_pos = pygame.mouse.get_pos()
         for key in self._visible_auth_fields():
             self.auth_inputs[key].draw(self.screen, self.font_small, self.font_medium)
 
-        message = None
+        message_text = None
         message_color = (46, 125, 50)
+        message_bg: Optional[Tuple[int, int, int]] = None
+        border_color = (205, 220, 227, 220)
         if self.auth_error_message:
-            message = self.auth_error_message
+            message_text = self.auth_error_message
             message_color = (198, 40, 40)
+            message_bg = (255, 235, 238)
+            border_color = (239, 154, 154, 220)
         elif self.auth_loading:
-            message = "Please wait..."
-            message_color = (55, 71, 79)
+            message_text = "Please wait..."
+            message_color = (30, 70, 90)
+            message_bg = (227, 242, 253)
+            border_color = (144, 202, 249, 220)
         elif self.auth_status_message:
-            message = self.auth_status_message
+            message_text = self.auth_status_message
+            message_bg = (232, 245, 233)
+            border_color = (165, 214, 167, 220)
 
-        if message:
-            msg_surface = self.font_small.render(message, True, message_color)
-            msg_rect = msg_surface.get_rect(center=(WINDOW_WIDTH // 2, self.auth_submit_button.rect.top - 28))
-            self.screen.blit(msg_surface, msg_rect)
+        if message_text and self.auth_message_rect.height > 0:
+            bubble_rect = self.auth_message_rect.inflate(0, 12)
+            bubble_surface = pygame.Surface(bubble_rect.size, pygame.SRCALPHA)
+            bubble_color = (*message_bg, 220) if message_bg else (255, 255, 255, 220)
+            pygame.draw.rect(bubble_surface, bubble_color, bubble_surface.get_rect(), border_radius=14)
+            pygame.draw.rect(bubble_surface, border_color, bubble_surface.get_rect(), width=1, border_radius=14)
+            self.screen.blit(bubble_surface, bubble_rect.topleft)
+
+            self._render_wrapped_text(
+                message_text,
+                self.font_small,
+                message_color,
+                self.auth_message_rect,
+                align="center",
+                line_spacing=2,
+                valign="center",
+            )
 
         self.auth_submit_button.draw(self.screen, self.font_medium, self.auth_submit_button.contains(mouse_pos))
         self.auth_toggle_button.draw(self.screen, self.font_small, self.auth_toggle_button.contains(mouse_pos))
 
+        footer_y = self.auth_panel_rect.bottom + 36
         footer_text = self.font_small.render("Press Esc to quit", True, (144, 164, 174))
-        footer_rect = footer_text.get_rect(center=(WINDOW_WIDTH // 2, panel_rect.bottom + 36))
+        footer_rect = footer_text.get_rect(center=(WINDOW_WIDTH // 2, footer_y))
         self.screen.blit(footer_text, footer_rect)
 
     def _draw_edges(self) -> None:
@@ -1172,9 +1345,22 @@ class SixteenPygameApp:
 
         cursor_y += 8
 
+        button_top = self.sidebar_buttons[0].rect.top if self.sidebar_buttons else WINDOW_HEIGHT - SIDEBAR_PADDING
+
         if self.message:
-            cursor_y = draw_wrapped(self.message, self.font_small, (94, 53, 177), cursor_y)
-            cursor_y += 8
+            available_height = button_top - cursor_y - 72
+            if available_height > 40:
+                message_rect = pygame.Rect(text_x, cursor_y, max_text_width, available_height)
+                cursor_y = self._render_wrapped_text(
+                    self.message,
+                    self.font_small,
+                    (94, 53, 177),
+                    message_rect,
+                    line_spacing=4,
+                )
+                cursor_y += 12
+            else:
+                cursor_y = button_top - 60
         else:
             cursor_y += 12
 
@@ -1186,7 +1372,11 @@ class SixteenPygameApp:
             counts_text = (
                 f"Pieces - Green (AI 1): {self.game.remaining(2)}  |  Red (AI 2): {self.game.remaining(1)}"
             )
-        draw_wrapped(counts_text, self.font_small, TEXT_COLOR, cursor_y)
+        counts_top = max(cursor_y, SIDEBAR_PADDING + 16)
+        counts_available = button_top - counts_top - 20
+        if counts_available > 0:
+            counts_rect = pygame.Rect(text_x, counts_top, max_text_width, counts_available)
+            self._render_wrapped_text(counts_text, self.font_small, TEXT_COLOR, counts_rect, line_spacing=4)
 
         for button in self.sidebar_buttons:
             button.draw(self.screen, self.font_small, button.contains(mouse_pos))
@@ -1213,6 +1403,8 @@ class SixteenPygameApp:
     def run(self) -> None:
         running = True
         while running:
+            if self.current_user is None:
+                self._layout_auth_controls()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
