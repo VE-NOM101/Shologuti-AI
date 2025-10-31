@@ -1,3 +1,3 @@
-"""Tkinter-based client for the Shologuti Python port."""
+"""Client package containing the standalone Pygame interface."""
 
 

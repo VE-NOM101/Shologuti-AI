@@ -1,9 +1,4 @@
-"""Shologuti Python package."""
+"""Lightweight Shologuti package focused on the Pygame client."""
 
-from importlib import resources
-
-__all__ = ["ASSET_PACKAGE"]
-
-ASSET_PACKAGE = __name__ + ".assets"
-
+__all__: list[str] = []
 
