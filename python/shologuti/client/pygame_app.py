@@ -17,6 +17,7 @@ except ImportError as exc:  # pragma: no cover - handled at runtime
 
 from ..adjacency import RAW_ADJACENCY
 from ..ai import MCTSAgent, MinimaxAgent
+from ..auth.firebase_auth import FirebaseAuthClient, FirebaseAuthError, FirebaseUser
 from ..game.board import MoveOption, PlayerId, opponent
 from ..game.rules import GameRules
 
@@ -180,6 +181,53 @@ class Button:
         return self.rect.collidepoint(pos)
 
 
+@dataclass
+class TextInput:
+    key: str
+    label: str
+    rect: pygame.Rect
+    placeholder: str
+    value: str = ""
+    is_password: bool = False
+    active: bool = False
+    max_length: int = 120
+
+    def draw(self, surface: pygame.Surface, label_font: pygame.font.Font, input_font: pygame.font.Font) -> None:
+        label_surface = label_font.render(self.label, True, (55, 71, 79))
+        label_rect = label_surface.get_rect()
+        label_rect.topleft = (self.rect.x, self.rect.y - label_surface.get_height() - 6)
+        surface.blit(label_surface, label_rect)
+
+        fill_color = (250, 250, 250)
+        border_color = (25, 118, 210) if self.active else (144, 164, 174)
+        pygame.draw.rect(surface, fill_color, self.rect, border_radius=8)
+        pygame.draw.rect(surface, border_color, self.rect, width=2, border_radius=8)
+
+        if self.value:
+            rendered_value = self.value
+            if self.is_password:
+                rendered_value = "*" * len(self.value)
+            text_color = (38, 50, 56)
+        else:
+            rendered_value = self.placeholder
+            text_color = (120, 144, 156)
+
+        max_width = self.rect.width - 24
+        text_to_render = rendered_value
+        while input_font.size(text_to_render)[0] > max_width and len(text_to_render) > 1:
+            text_to_render = text_to_render[1:]
+
+        text_surface = input_font.render(text_to_render, True, text_color)
+        text_rect = text_surface.get_rect()
+        text_rect.topleft = (self.rect.x + 12, self.rect.y + (self.rect.height - text_surface.get_height()) // 2)
+        surface.blit(text_surface, text_rect)
+
+
+class AuthMode(Enum):
+    LOGIN = "login"
+    REGISTER = "register"
+
+
 class GameMode(Enum):
     HUMAN_VS_AI = "human_vs_ai"
     AI_VS_AI = "ai_vs_ai"
@@ -195,9 +243,36 @@ class SixteenPygameApp:
         self.font_small = pygame.font.Font(None, 24)
         self.font_medium = pygame.font.Font(None, 32)
         self.font_large = pygame.font.Font(None, 48)
-        self.menu_buttons = self._build_menu_buttons()
         self.sidebar_buttons: List[Button] = []
         self.button_lookup: Dict[str, Button] = {}
+
+        self.auth_mode = AuthMode.LOGIN
+        self.auth_inputs = self._create_auth_inputs()
+        self.active_input_key: Optional[str] = None
+        self.auth_error_message: Optional[str] = None
+        self.auth_status_message: Optional[str] = None
+        self.auth_loading: bool = False
+        self.auth_submit_button = Button(
+            key="auth_submit",
+            label="Sign In",
+            rect=pygame.Rect(0, 0, 0, 0),
+            base_color=(30, 136, 229),
+        )
+        self.auth_toggle_button = Button(
+            key="auth_toggle",
+            label="Need an account? Register",
+            rect=pygame.Rect(0, 0, 0, 0),
+            base_color=(96, 125, 139),
+        )
+        try:
+            self.auth_client: Optional[FirebaseAuthClient] = FirebaseAuthClient()
+        except FirebaseAuthError as exc:
+            self.auth_client = None
+            self.auth_error_message = str(exc)
+        self.current_user: Optional[FirebaseUser] = None
+        self._configure_auth_inputs()
+        self.menu_buttons: List[Button] = []
+        self._refresh_menu_buttons()
 
         self.mode: Optional[GameMode] = None
 
@@ -225,24 +300,267 @@ class SixteenPygameApp:
         button_width = 320
         button_height = 70
         button_spacing = 20
-        total_height = 2 * button_height + button_spacing
+        specs: List[Tuple[str, str, Tuple[int, int, int]]] = [
+            ("menu_human", "Human vs AI", (56, 142, 60)),
+            ("menu_ai", "AI vs AI", (30, 136, 229)),
+        ]
+        if self.current_user is not None:
+            specs.append(("menu_logout", "Logout", (229, 57, 53)))
+        total_height = len(specs) * button_height + max(len(specs) - 1, 0) * button_spacing
         start_y = WINDOW_HEIGHT // 2 - total_height // 2
         start_x = WINDOW_WIDTH // 2 - button_width // 2
+        buttons: List[Button] = []
+        for index, (key, label, color) in enumerate(specs):
+            rect = pygame.Rect(
+                start_x,
+                start_y + index * (button_height + button_spacing),
+                button_width,
+                button_height,
+            )
+            buttons.append(Button(key=key, label=label, rect=rect, base_color=color))
+        return buttons
 
-        return [
-            Button(
-                key="menu_human",
-                label="Human vs AI",
-                rect=pygame.Rect(start_x, start_y, button_width, button_height),
-                base_color=(56, 142, 60),
+    def _refresh_menu_buttons(self) -> None:
+        self.menu_buttons = self._build_menu_buttons()
+
+    # ------------------------------------------------------------------
+    # Authentication helpers
+    # ------------------------------------------------------------------
+    def _create_auth_inputs(self) -> Dict[str, TextInput]:
+        return {
+            "name": TextInput(
+                key="name",
+                label="Name",
+                rect=pygame.Rect(0, 0, 0, 0),
+                placeholder="Display name",
+                max_length=60,
             ),
-            Button(
-                key="menu_ai",
-                label="AI vs AI",
-                rect=pygame.Rect(start_x, start_y + button_height + button_spacing, button_width, button_height),
-                base_color=(30, 136, 229),
+            "email": TextInput(
+                key="email",
+                label="Email",
+                rect=pygame.Rect(0, 0, 0, 0),
+                placeholder="you@example.com",
+                max_length=120,
             ),
-        ]
+            "password": TextInput(
+                key="password",
+                label="Password",
+                rect=pygame.Rect(0, 0, 0, 0),
+                placeholder="Enter password",
+                is_password=True,
+                max_length=80,
+            ),
+        }
+
+    def _visible_auth_fields(self) -> List[str]:
+        if self.auth_mode == AuthMode.LOGIN:
+            return ["email", "password"]
+        return ["name", "email", "password"]
+
+    def _configure_auth_inputs(self) -> None:
+        field_width = 360
+        field_height = 48
+        spacing = 18
+        fields = self._visible_auth_fields()
+        start_x = WINDOW_WIDTH // 2 - field_width // 2
+        total_height = len(fields) * field_height + max(len(fields) - 1, 0) * spacing
+        start_y = WINDOW_HEIGHT // 2 - total_height // 2
+
+        for index, key in enumerate(fields):
+            rect = pygame.Rect(
+                start_x,
+                start_y + index * (field_height + spacing),
+                field_width,
+                field_height,
+            )
+            self.auth_inputs[key].rect = rect
+
+        for key, field in self.auth_inputs.items():
+            if key not in fields:
+                field.active = False
+
+        submit_rect = pygame.Rect(
+            start_x,
+            start_y + len(fields) * (field_height + spacing) + 12,
+            field_width,
+            52,
+        )
+        toggle_rect = pygame.Rect(
+            start_x,
+            submit_rect.bottom + 12,
+            field_width,
+            44,
+        )
+        self.auth_submit_button.rect = submit_rect
+        self.auth_toggle_button.rect = toggle_rect
+
+        if self.auth_mode == AuthMode.LOGIN:
+            self.auth_submit_button.label = "Sign In"
+            self.auth_submit_button.base_color = (30, 136, 229)
+            self.auth_toggle_button.label = "Need an account? Register"
+        else:
+            self.auth_submit_button.label = "Create Account"
+            self.auth_submit_button.base_color = (67, 160, 71)
+            self.auth_toggle_button.label = "Have an account? Sign In"
+        self.auth_toggle_button.base_color = (96, 125, 139)
+
+        first_field = fields[0] if fields else None
+        self._set_active_input(first_field)
+
+    def _set_active_input(self, key: Optional[str]) -> None:
+        self.active_input_key = key
+        for field in self.auth_inputs.values():
+            field.active = field.key == key
+
+    def _focus_next_input(self, backwards: bool = False) -> None:
+        fields = self._visible_auth_fields()
+        if not fields:
+            self._set_active_input(None)
+            return
+
+        if self.active_input_key not in fields or self.active_input_key is None:
+            target = fields[-1] if backwards else fields[0]
+            self._set_active_input(target)
+            return
+
+        current_index = fields.index(self.active_input_key)
+        if backwards:
+            next_index = (current_index - 1) % len(fields)
+        else:
+            next_index = (current_index + 1) % len(fields)
+        self._set_active_input(fields[next_index])
+
+    def _handle_auth_click(self, pos: Tuple[int, int]) -> None:
+        if self.auth_submit_button.contains(pos):
+            if self.auth_loading:
+                return
+            self._submit_auth()
+            return
+        if self.auth_toggle_button.contains(pos):
+            if self.auth_loading:
+                return
+            self._toggle_auth_mode()
+            return
+
+        for key in self._visible_auth_fields():
+            field = self.auth_inputs[key]
+            if field.rect.collidepoint(pos):
+                self._set_active_input(key)
+                return
+
+        self._set_active_input(None)
+
+    def _handle_auth_keydown(self, event: pygame.event.Event) -> bool:
+        if event.key == pygame.K_TAB:
+            self._focus_next_input(backwards=bool(event.mod & pygame.KMOD_SHIFT))
+            return True
+        if event.key in (pygame.K_UP, pygame.K_DOWN):
+            self._focus_next_input(backwards=event.key == pygame.K_UP)
+            return True
+        if event.key == pygame.K_RETURN:
+            self._submit_auth()
+            return True
+        if event.key == pygame.K_ESCAPE:
+            return False
+
+        if self.active_input_key is None:
+            return False
+
+        field = self.auth_inputs[self.active_input_key]
+
+        if event.key == pygame.K_BACKSPACE:
+            field.value = field.value[:-1]
+            return True
+        if event.key == pygame.K_DELETE:
+            field.value = ""
+            return True
+
+        if event.unicode and event.unicode.isprintable():
+            if len(field.value) < field.max_length:
+                field.value += event.unicode
+            return True
+
+        return False
+
+    def _toggle_auth_mode(self) -> None:
+        self.auth_mode = AuthMode.REGISTER if self.auth_mode == AuthMode.LOGIN else AuthMode.LOGIN
+        if self.auth_mode == AuthMode.LOGIN:
+            self.auth_inputs["name"].value = ""
+        self.auth_error_message = None
+        self.auth_status_message = None
+        self.auth_loading = False
+        self._configure_auth_inputs()
+
+    def _submit_auth(self) -> None:
+        if self.auth_loading:
+            return
+        if self.auth_client is None:
+            self.auth_error_message = "Firebase is not configured. Set FIREBASE_WEB_API_KEY."
+            return
+
+        name = self.auth_inputs["name"].value.strip()
+        email = self.auth_inputs["email"].value.strip()
+        password = self.auth_inputs["password"].value
+
+        self.auth_inputs["name"].value = name
+        self.auth_inputs["email"].value = email
+
+        if self.auth_mode == AuthMode.REGISTER and not name:
+            self.auth_error_message = "Name is required."
+            return
+        if not email:
+            self.auth_error_message = "Email is required."
+            return
+        if not password:
+            self.auth_error_message = "Password is required."
+            return
+        if len(password) < 6:
+            self.auth_error_message = "Password must be at least 6 characters."
+            return
+
+        self.auth_error_message = None
+        self.auth_status_message = "Signing in..." if self.auth_mode == AuthMode.LOGIN else "Creating account..."
+        self.auth_loading = True
+
+        try:
+            if self.auth_mode == AuthMode.LOGIN:
+                user = self.auth_client.login_user(email=email, password=password)
+            else:
+                user = self.auth_client.register_user(name=name, email=email, password=password)
+        except FirebaseAuthError as exc:
+            self.auth_error_message = str(exc)
+            self.auth_status_message = None
+            self.auth_loading = False
+            self.auth_inputs["password"].value = ""
+            return
+        except Exception as exc:  # pragma: no cover - defensive
+            self.auth_error_message = f"Unexpected error: {exc}"
+            self.auth_status_message = None
+            self.auth_loading = False
+            self.auth_inputs["password"].value = ""
+            return
+
+        self.current_user = user
+        self.auth_status_message = None
+        self.auth_loading = False
+        self.auth_inputs["password"].value = ""
+        if self.auth_mode == AuthMode.REGISTER:
+            self.auth_inputs["name"].value = ""
+        self._refresh_menu_buttons()
+        self._return_to_menu()
+
+    def logout(self) -> None:
+        self._return_to_menu()
+        self.current_user = None
+        if self.auth_client is not None:
+            self.auth_error_message = None
+        self.auth_status_message = None
+        self.auth_loading = False
+        for field in self.auth_inputs.values():
+            field.value = ""
+        self.auth_mode = AuthMode.LOGIN
+        self._configure_auth_inputs()
+        self._refresh_menu_buttons()
 
     def _set_sidebar_buttons(self, specs: List[Tuple[str, str, Tuple[int, int, int]]]) -> None:
         button_height = 46
@@ -275,15 +593,16 @@ class SixteenPygameApp:
     def start_human_mode(self) -> None:
         self.mode = GameMode.HUMAN_VS_AI
         pygame.display.set_caption("Sixteen - A Game of Tradition: Human vs AI")
-        self._set_sidebar_buttons(
-            [
+        specs = [
                 ("new", "New Game", (56, 142, 60)),
                 ("undo", "Undo", (255, 112, 67)),
                 ("depth", f"Depth: {self.minimax_depth}", (30, 136, 229)),
                 ("switch", "", (142, 36, 170)),
                 ("menu", "Back to Menu", (96, 125, 139)),
             ]
-        )
+        if self.current_user is not None:
+            specs.append(("logout", "Logout", (229, 57, 53)))
+        self._set_sidebar_buttons(specs)
         self.ai_player = opponent(self.human_player)
         self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
         self._refresh_human_sidebar_labels()
@@ -311,15 +630,16 @@ class SixteenPygameApp:
     def start_ai_vs_ai_mode(self) -> None:
         self.mode = GameMode.AI_VS_AI
         pygame.display.set_caption("Sixteen - A Game of Tradition: AI vs AI")
-        self._set_sidebar_buttons(
-            [
+        specs = [
                 ("new", "New Battle", (56, 142, 60)),
                 ("depth", f"Minimax Depth: {self.ai_vs_ai_depth}", (30, 136, 229)),
                 ("iter", f"MCTS Iter: {self.mcts_iterations}", (0, 151, 167)),
                 ("pause", "Pause", (230, 81, 0)),
                 ("menu", "Back to Menu", (96, 125, 139)),
             ]
-        )
+        if self.current_user is not None:
+            specs.append(("logout", "Logout", (229, 57, 53)))
+        self._set_sidebar_buttons(specs)
         self._reset_ai_battle()
 
     def _reset_ai_battle(self) -> None:
@@ -435,6 +755,8 @@ class SixteenPygameApp:
     # Input handling
     # ------------------------------------------------------------------
     def handle_click(self, pos: Tuple[int, int]) -> None:
+        if self.current_user is None:
+            return
         if self.mode is None:
             for button in self.menu_buttons:
                 if button.contains(pos):
@@ -499,6 +821,9 @@ class SixteenPygameApp:
             self.pending_ai = True
 
     def _handle_button(self, button: Button) -> None:
+        if button.key == "logout":
+            self.logout()
+            return
         if button.key == "menu":
             self._return_to_menu()
             return
@@ -529,6 +854,8 @@ class SixteenPygameApp:
             self.start_human_mode()
         elif button.key == "menu_ai":
             self.start_ai_vs_ai_mode()
+        elif button.key == "menu_logout":
+            self.logout()
 
     def _must_continue(self) -> bool:
         return self.game.turn.pending_capture_from is not None and self.game.turn.to_move == self.human_player
@@ -537,6 +864,8 @@ class SixteenPygameApp:
     # AI turn
     # ------------------------------------------------------------------
     def update_ai(self) -> None:
+        if self.current_user is None:
+            return
         if self.mode == GameMode.HUMAN_VS_AI:
             self._update_human_ai()
         elif self.mode == GameMode.AI_VS_AI:
@@ -636,6 +965,9 @@ class SixteenPygameApp:
     # Rendering helpers
     # ------------------------------------------------------------------
     def draw(self) -> None:
+        if self.current_user is None:
+            self._draw_auth_screen()
+            return
         if self.mode is None:
             self._draw_menu()
             return
@@ -670,12 +1002,74 @@ class SixteenPygameApp:
         subtitle_rect = subtitle_surface.get_rect(center=(WINDOW_WIDTH // 2, title_rect.bottom + 40))
         self.screen.blit(subtitle_surface, subtitle_rect)
 
+        if self.current_user is not None:
+            display_name = self.current_user.display_name or self.current_user.email
+            user_surface = self.font_small.render(f"Signed in as {display_name}", True, (144, 164, 174))
+            user_rect = user_surface.get_rect()
+            user_rect.topright = (WINDOW_WIDTH - 50, 50)
+            self.screen.blit(user_surface, user_rect)
+
         mouse_pos = pygame.mouse.get_pos()
         for button in self.menu_buttons:
             button.draw(self.screen, self.font_medium, button.contains(mouse_pos))
 
         footer_text = self.font_small.render("Press Esc to quit", True, (144, 164, 174))
         footer_rect = footer_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 60))
+        self.screen.blit(footer_text, footer_rect)
+
+    def _draw_auth_screen(self) -> None:
+        self.screen.fill((21, 34, 45))
+
+        panel_width = 480
+        panel_height = 520 if self.auth_mode == AuthMode.REGISTER else 460
+        panel_rect = pygame.Rect(
+            WINDOW_WIDTH // 2 - panel_width // 2,
+            WINDOW_HEIGHT // 2 - panel_height // 2,
+            panel_width,
+            panel_height,
+        )
+
+        pygame.draw.rect(self.screen, (236, 239, 241), panel_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (120, 144, 156), panel_rect, width=2, border_radius=18)
+
+        title_text = "Sign in to play" if self.auth_mode == AuthMode.LOGIN else "Create your account"
+        title_surface = self.font_large.render(title_text, True, (38, 50, 56))
+        title_rect = title_surface.get_rect(center=(WINDOW_WIDTH // 2, panel_rect.top + 80))
+        self.screen.blit(title_surface, title_rect)
+
+        if self.auth_mode == AuthMode.LOGIN:
+            subtitle_text = "Use your email and password to continue"
+        else:
+            subtitle_text = "Just name, email, and password to get started"
+        subtitle_surface = self.font_small.render(subtitle_text, True, (84, 110, 122))
+        subtitle_rect = subtitle_surface.get_rect(center=(WINDOW_WIDTH // 2, title_rect.bottom + 26))
+        self.screen.blit(subtitle_surface, subtitle_rect)
+
+        mouse_pos = pygame.mouse.get_pos()
+        for key in self._visible_auth_fields():
+            self.auth_inputs[key].draw(self.screen, self.font_small, self.font_medium)
+
+        message = None
+        message_color = (46, 125, 50)
+        if self.auth_error_message:
+            message = self.auth_error_message
+            message_color = (198, 40, 40)
+        elif self.auth_loading:
+            message = "Please wait..."
+            message_color = (55, 71, 79)
+        elif self.auth_status_message:
+            message = self.auth_status_message
+
+        if message:
+            msg_surface = self.font_small.render(message, True, message_color)
+            msg_rect = msg_surface.get_rect(center=(WINDOW_WIDTH // 2, self.auth_submit_button.rect.top - 28))
+            self.screen.blit(msg_surface, msg_rect)
+
+        self.auth_submit_button.draw(self.screen, self.font_medium, self.auth_submit_button.contains(mouse_pos))
+        self.auth_toggle_button.draw(self.screen, self.font_small, self.auth_toggle_button.contains(mouse_pos))
+
+        footer_text = self.font_small.render("Press Esc to quit", True, (144, 164, 174))
+        footer_rect = footer_text.get_rect(center=(WINDOW_WIDTH // 2, panel_rect.bottom + 36))
         self.screen.blit(footer_text, footer_rect)
 
     def _draw_edges(self) -> None:
@@ -822,12 +1216,22 @@ class SixteenPygameApp:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    if self.mode is None:
+                    continue
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    if self.current_user is None or self.mode is None:
                         running = False
                     else:
                         self._return_to_menu()
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    continue
+
+                if self.current_user is None:
+                    if event.type == pygame.KEYDOWN:
+                        self._handle_auth_keydown(event)
+                    elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        self._handle_auth_click(event.pos)
+                    continue
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self.handle_click(event.pos)
 
             self.update_ai()
