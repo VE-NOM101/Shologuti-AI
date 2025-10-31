@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-from .ai import MinimaxAgent
+from .ai import MCTSAgent, MinimaxAgent
 from .game.board import PlayerId, opponent
 from .game.rules import GameRules
 
@@ -110,12 +110,7 @@ def _choose_player() -> PlayerId:
         print("Please type 'G' or 'R'.")
 
 
-def main(argv: list[str] | None = None) -> int:
-    mode = input("Select mode: 1) Human vs AI  2) AI vs AI : ").strip()
-    if mode != "1":
-        print("AI vs AI mode is not implemented yet. Please restart and choose option 1.")
-        return 0
-
+def _run_human_vs_ai() -> int:
     state = GameRules()
     human_player = _choose_player()
     ai_player = opponent(human_player)
@@ -142,6 +137,85 @@ def main(argv: list[str] | None = None) -> int:
 
     print("Thanks for playing!")
     return 0
+
+
+def _run_ai_vs_ai() -> int:
+    state = GameRules()
+
+    try:
+        depth_input = input("Select Minimax search depth for AI 1 (Green) [default 3]: ").strip()
+        minimax_depth = max(1, int(depth_input)) if depth_input else 3
+    except ValueError:
+        print("Invalid depth entered; using default depth of 3.")
+        minimax_depth = 3
+
+    try:
+        iter_input = input("Select MCTS simulations per move for AI 2 (Red) [default 500]: ").strip()
+        mcts_iterations = max(1, int(iter_input)) if iter_input else 500
+    except ValueError:
+        print("Invalid iteration count; using default of 500.")
+        mcts_iterations = 500
+
+    show_board = input("Display board after each move? [y/N]: ").strip().lower() in {"y", "yes"}
+
+    minimax_agent = MinimaxAgent(player=2, depth=minimax_depth)
+    mcts_agent = MCTSAgent(player=1, iterations=mcts_iterations)
+
+    agents = {
+        2: ("AI 1 (Minimax)", minimax_agent),
+        1: ("AI 2 (MCTS)", mcts_agent),
+    }
+
+    print("Game start! AI 1 plays Green (first), AI 2 plays Red.")
+
+    turn_counter = 1
+    while True:
+        player_to_move = state.turn.to_move
+        label, agent = agents[player_to_move]
+
+        planned = agent.choose_move(state)
+        if planned is None:
+            winner = opponent(player_to_move)
+            print(f"{label} has no legal moves. {agents[winner][0]} wins by default.")
+            break
+
+        result = state.apply_player_move(player_to_move, planned.origin, planned.target)
+        if not result.legal:
+            winner = opponent(player_to_move)
+            print(f"{label} attempted an illegal move ({result.error}). {agents[winner][0]} wins!")
+            break
+
+        print(f"Turn {turn_counter}: {label} moves from {planned.origin} to {planned.target}.")
+        if result.captured is not None:
+            print(f"  Capture at {result.captured}.")
+        if show_board:
+            _render_board(state)
+
+        if result.winner is not None:
+            print(f"{agents[result.winner][0]} wins the match!")
+            break
+
+        if result.must_continue:
+            print(f"  Capture chain continues for {label}...")
+            continue
+
+        turn_counter += 1
+
+    print("AI vs AI match complete.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    while True:
+        mode = input("Select mode: 1) Human vs AI  2) AI vs AI : ").strip()
+        if mode in {"1", "2"}:
+            break
+        print("Invalid selection. Please choose 1 or 2.")
+
+    if mode == "1":
+        return _run_human_vs_ai()
+
+    return _run_ai_vs_ai()
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI invocation

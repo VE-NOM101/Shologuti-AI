@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -160,7 +161,130 @@ class MinimaxAgent:
 
         return material * 10 + mobility + pending_bonus
 
+    @property
+    def description(self) -> str:
+        return f"Minimax(depth={self.depth})"
 
-__all__ = ["MinimaxAgent", "PlannedMove"]
+
+class _MCTSNode:
+    """Internal tree node used by :class:`MCTSAgent`."""
+
+    def __init__(
+        self,
+        state: GameRules,
+        parent: Optional["_MCTSNode"],
+        move: Optional[MoveOption],
+    ) -> None:
+        self.state = state
+        self.parent = parent
+        self.move = move
+        self.children: List[_MCTSNode] = []
+        self.untried_moves: List[MoveOption] = _generate_moves(state)
+        self.visits: int = 0
+        self.wins: float = 0.0
+
+    def is_terminal(self) -> bool:
+        if _winner_for_state(self.state) is not None:
+            return True
+        return len(_generate_moves(self.state)) == 0
+
+    def is_fully_expanded(self) -> bool:
+        return len(self.untried_moves) == 0
+
+    def best_child(self, exploration_constant: float) -> "_MCTSNode":
+        def ucb_score(child: _MCTSNode) -> float:
+            if child.visits == 0:
+                return math.inf
+            exploitation = child.wins / child.visits
+            exploration = exploration_constant * math.sqrt(max(math.log(self.visits), 0.0) / child.visits)
+            return exploitation + exploration
+
+        return max(self.children, key=ucb_score)
+
+
+class MCTSAgent:
+    """Monte Carlo Tree Search agent."""
+
+    def __init__(
+        self,
+        player: PlayerId,
+        iterations: int = 500,
+        exploration_constant: float = math.sqrt(2.0),
+    ) -> None:
+        self.player = player
+        self.iterations = max(1, iterations)
+        self.exploration_constant = exploration_constant
+
+    def choose_move(self, state: GameRules) -> Optional[PlannedMove]:
+        root = _MCTSNode(copy.deepcopy(state), parent=None, move=None)
+
+        for _ in range(self.iterations):
+            node = root
+
+            # Selection
+            while node.is_fully_expanded() and not node.is_terminal():
+                if not node.children:
+                    break
+                node = node.best_child(self.exploration_constant)
+
+            # Expansion
+            if not node.is_terminal() and node.untried_moves:
+                move_index = random.randrange(len(node.untried_moves))
+                move = node.untried_moves.pop(move_index)
+                next_state = copy.deepcopy(node.state)
+                player_to_move = next_state.turn.to_move
+                result = next_state.apply_player_move(player_to_move, move.origin, move.target)
+                if result.legal:
+                    child = _MCTSNode(next_state, parent=node, move=move)
+                    node.children.append(child)
+                    node = child
+                else:
+                    continue
+
+            # Simulation
+            reward = self._rollout(node.state)
+
+            # Backpropagation
+            while node is not None:
+                node.visits += 1
+                node.wins += reward
+                node = node.parent
+
+        if not root.children:
+            return None
+
+        best_child = max(root.children, key=lambda child: child.visits)
+        if best_child.move is None:
+            return None
+        return PlannedMove(origin=best_child.move.origin, target=best_child.move.target)
+
+    def _rollout(self, state: GameRules) -> float:
+        simulation = copy.deepcopy(state)
+
+        while True:
+            winner = _winner_for_state(simulation)
+            if winner is not None:
+                if winner == self.player:
+                    return 1.0
+                if winner == opponent(self.player):
+                    return 0.0
+                return 0.5
+
+            moves = _generate_moves(simulation)
+            if not moves:
+                return 0.5
+
+            move = random.choice(moves)
+            player_to_move = simulation.turn.to_move
+            result = simulation.apply_player_move(player_to_move, move.origin, move.target)
+            if not result.legal:
+                return 0.5
+
+    @property
+    def description(self) -> str:
+        return f"MCTS(iterations={self.iterations})"
+
+
+__all__ = ["MinimaxAgent", "MCTSAgent", "PlannedMove"]
 
 

@@ -65,7 +65,7 @@ python -m pip install -e .
 # start a console match against the minimax AI
 python -m shologuti.cli
 
-# launch the pygame UI (human vs AI)
+# launch the pygame UI (select Human vs AI or AI vs AI)
 python -m shologuti.client.pygame_app
 
 # run the lobby/game server
@@ -74,6 +74,8 @@ python -m shologuti.server --host 0.0.0.0 --port 11111 --data-dir ./data
 # in a separate terminal, start the desktop client
 python -m shologuti.client.app
 ```
+
+The Pygame client opens with a mode-selection screen. Choose **Human vs AI** to play against the minimax agent or **AI vs AI** to watch the minimax (Green) and MCTS (Red) agents compete. Sidebar controls let you tweak difficulty parameters, pause/resume simulations, and return to the main menu without restarting the program.
 
 The client and server currently communicate over localhost by default. Choose a
 nickname when launching the client; duplicates are automatically de-duplicated

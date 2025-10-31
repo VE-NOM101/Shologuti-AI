@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -15,7 +16,7 @@ except ImportError as exc:  # pragma: no cover - handled at runtime
     ) from exc
 
 from ..adjacency import RAW_ADJACENCY
-from ..ai import MinimaxAgent
+from ..ai import MCTSAgent, MinimaxAgent
 from ..game.board import MoveOption, PlayerId, opponent
 from ..game.rules import GameRules
 
@@ -162,12 +163,14 @@ BASE_RADIUS = 6
 
 @dataclass
 class Button:
+    key: str
     label: str
     rect: pygame.Rect
+    base_color: Tuple[int, int, int] = (33, 150, 243)
 
     def draw(self, surface: pygame.Surface, font: pygame.font.Font, hovered: bool) -> None:
-        base_color = (76, 175, 80) if "Depth" in self.label else (33, 150, 243)
-        color = tuple(min(c + 40, 255) for c in base_color) if hovered else base_color
+        highlight = tuple(min(c + 40, 255) for c in self.base_color)
+        color = highlight if hovered else self.base_color
         pygame.draw.rect(surface, color, self.rect, border_radius=6)
         pygame.draw.rect(surface, (13, 71, 161), self.rect, width=2, border_radius=6)
         text_surf = font.render(self.label, True, (255, 255, 255))
@@ -177,40 +180,39 @@ class Button:
         return self.rect.collidepoint(pos)
 
 
+class GameMode(Enum):
+    HUMAN_VS_AI = "human_vs_ai"
+    AI_VS_AI = "ai_vs_ai"
+
+
 class ShologutiPygameApp:
     def __init__(self) -> None:
         pygame.init()
-        pygame.display.set_caption("Shologuti - Human vs AI (Pygame)")
+        pygame.display.set_caption("Shologuti - Sholo Guti Arena")
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
 
         self.font_small = pygame.font.Font(None, 24)
         self.font_medium = pygame.font.Font(None, 32)
         self.font_large = pygame.font.Font(None, 48)
+        self.menu_buttons = self._build_menu_buttons()
+        self.sidebar_buttons: List[Button] = []
+        self.button_lookup: Dict[str, Button] = {}
 
-        button_labels = ["New Game", "Undo", "Depth: 3", "Switch Color"]
-        button_height = 46
-        button_spacing = 12
-        total_height = len(button_labels) * button_height + (len(button_labels) - 1) * button_spacing
-        button_start_y = WINDOW_HEIGHT - SIDEBAR_PADDING - total_height
-
-        self.buttons = [
-            Button(
-                label,
-                pygame.Rect(
-                    SIDEBAR_PADDING,
-                    button_start_y + index * (button_height + button_spacing),
-                    SIDEBAR_WIDTH,
-                    button_height,
-                ),
-            )
-            for index, label in enumerate(button_labels)
-        ]
+        self.mode: Optional[GameMode] = None
 
         self.game = GameRules()
         self.human_player: PlayerId = 2  # Green traditionally starts
         self.ai_player: PlayerId = opponent(self.human_player)
-        self.agent = MinimaxAgent(self.ai_player, depth=3)
+        self.minimax_depth: int = 3
+        self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
+
+        self.ai_vs_ai_depth: int = 3
+        self.mcts_iterations: int = 500
+        self.ai_vs_ai_pause: bool = False
+        self.ai_move_delay_ms: int = 800
+        self.last_ai_tick: int = pygame.time.get_ticks()
+        self.ai_agent_map: Dict[PlayerId, Tuple[str, MinimaxAgent | MCTSAgent]] = {}
 
         self.selected_origin: Optional[int] = None
         self.highlight_moves: List[MoveOption] = []
@@ -219,40 +221,210 @@ class ShologutiPygameApp:
         self.history: List[GameRules] = [copy.deepcopy(self.game)]
         self.pending_ai: bool = False
 
+    def _build_menu_buttons(self) -> List[Button]:
+        button_width = 320
+        button_height = 70
+        button_spacing = 20
+        total_height = 2 * button_height + button_spacing
+        start_y = WINDOW_HEIGHT // 2 - total_height // 2
+        start_x = WINDOW_WIDTH // 2 - button_width // 2
+
+        return [
+            Button(
+                key="menu_human",
+                label="Human vs AI",
+                rect=pygame.Rect(start_x, start_y, button_width, button_height),
+                base_color=(56, 142, 60),
+            ),
+            Button(
+                key="menu_ai",
+                label="AI vs AI",
+                rect=pygame.Rect(start_x, start_y + button_height + button_spacing, button_width, button_height),
+                base_color=(30, 136, 229),
+            ),
+        ]
+
+    def _set_sidebar_buttons(self, specs: List[Tuple[str, str, Tuple[int, int, int]]]) -> None:
+        button_height = 46
+        button_spacing = 12
+        if not specs:
+            self.sidebar_buttons = []
+            self.button_lookup = {}
+            return
+
+        total_height = len(specs) * button_height + (len(specs) - 1) * button_spacing
+        start_y = WINDOW_HEIGHT - SIDEBAR_PADDING - total_height
+
+        self.sidebar_buttons = []
+        self.button_lookup = {}
+
+        for index, (key, label, color) in enumerate(specs):
+            rect = pygame.Rect(
+                SIDEBAR_PADDING,
+                start_y + index * (button_height + button_spacing),
+                SIDEBAR_WIDTH,
+                button_height,
+            )
+            button = Button(key=key, label=label, rect=rect, base_color=color)
+            self.sidebar_buttons.append(button)
+            self.button_lookup[key] = button
+
     # ------------------------------------------------------------------
     # Game flow helpers
     # ------------------------------------------------------------------
-    def reset(self) -> None:
+    def start_human_mode(self) -> None:
+        self.mode = GameMode.HUMAN_VS_AI
+        pygame.display.set_caption("Shologuti - Human vs AI (Pygame)")
+        self._set_sidebar_buttons(
+            [
+                ("new", "New Game", (56, 142, 60)),
+                ("undo", "Undo", (255, 112, 67)),
+                ("depth", f"Depth: {self.minimax_depth}", (30, 136, 229)),
+                ("switch", "", (142, 36, 170)),
+                ("menu", "Back to Menu", (96, 125, 139)),
+            ]
+        )
+        self.ai_player = opponent(self.human_player)
+        self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
+        self._refresh_human_sidebar_labels()
+        self._reset_human_game()
+
+    def _reset_human_game(self) -> None:
         self.game = GameRules()
         if self.human_player == 1:
             self.game.turn.to_move = 1
-        self.agent = MinimaxAgent(self.ai_player, depth=self.agent.depth)
+        self.ai_player = opponent(self.human_player)
+        self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
         self.selected_origin = None
         self.highlight_moves = []
-        self.message = None
+        self.history = [copy.deepcopy(self.game)]
+        self.pending_ai = self.game.turn.to_move == self.ai_player
+        self.message = "AI to move first..." if self.pending_ai else "Your turn."
+
+    def _refresh_human_sidebar_labels(self) -> None:
+        if "depth" in self.button_lookup:
+            self.button_lookup["depth"].label = f"Depth: {self.minimax_depth}"
+        if "switch" in self.button_lookup:
+            color_desc = "Green (2)" if self.human_player == 2 else "Red (1)"
+            self.button_lookup["switch"].label = f"Play as: {color_desc}"
+
+    def start_ai_vs_ai_mode(self) -> None:
+        self.mode = GameMode.AI_VS_AI
+        pygame.display.set_caption("Shologuti - AI vs AI (Pygame)")
+        self._set_sidebar_buttons(
+            [
+                ("new", "New Battle", (56, 142, 60)),
+                ("depth", f"Minimax Depth: {self.ai_vs_ai_depth}", (30, 136, 229)),
+                ("iter", f"MCTS Iter: {self.mcts_iterations}", (0, 151, 167)),
+                ("pause", "Pause", (230, 81, 0)),
+                ("menu", "Back to Menu", (96, 125, 139)),
+            ]
+        )
+        self._reset_ai_battle()
+
+    def _reset_ai_battle(self) -> None:
+        self.game = GameRules()
+        self.selected_origin = None
+        self.highlight_moves = []
         self.history = [copy.deepcopy(self.game)]
         self.pending_ai = False
+        self.ai_vs_ai_pause = False
+        self.last_ai_tick = pygame.time.get_ticks()
+        self.ai_agent_map = {
+            2: ("AI 1 (Minimax)", MinimaxAgent(player=2, depth=self.ai_vs_ai_depth)),
+            1: ("AI 2 (MCTS)", MCTSAgent(player=1, iterations=self.mcts_iterations)),
+        }
+        self.message = "AI battle started."
+        self._refresh_ai_vs_ai_sidebar_labels()
+
+    def _refresh_ai_vs_ai_sidebar_labels(self) -> None:
+        if "depth" in self.button_lookup:
+            self.button_lookup["depth"].label = f"Minimax Depth: {self.ai_vs_ai_depth}"
+        if "iter" in self.button_lookup:
+            self.button_lookup["iter"].label = f"MCTS Iter: {self.mcts_iterations}"
+        if "pause" in self.button_lookup:
+            self.button_lookup["pause"].label = "Resume" if self.ai_vs_ai_pause else "Pause"
 
     def toggle_player_color(self) -> None:
+        if self.mode != GameMode.HUMAN_VS_AI:
+            return
         self.human_player = opponent(self.human_player)
         self.ai_player = opponent(self.human_player)
-        self.reset()
+        self._refresh_human_sidebar_labels()
+        self._reset_human_game()
+        color_desc = "Green (2)" if self.human_player == 2 else "Red (1)"
+        self.message = f"You now play as {color_desc}."
 
     def set_ai_depth(self, depth: int) -> None:
-        self.agent = MinimaxAgent(self.ai_player, depth=depth)
-        self.buttons[2].label = f"Depth: {depth}"
+        self.minimax_depth = depth
+        if self.mode == GameMode.HUMAN_VS_AI:
+            self.agent = MinimaxAgent(self.ai_player, depth=depth)
+            self._refresh_human_sidebar_labels()
+            self.message = f"AI depth set to {depth}."
+        else:
+            self._refresh_human_sidebar_labels()
 
     def undo(self) -> None:
+        if self.mode != GameMode.HUMAN_VS_AI:
+            return
         if len(self.history) <= 1:
             return
-        # Pop current state
         self.history.pop()
         restored = copy.deepcopy(self.history[-1])
         self.game = restored
-        self.message = "Undid last move"
+        self.message = "Undid last move."
         self.selected_origin = None
         self.highlight_moves = []
         self.pending_ai = False
+
+    def _cycle_human_depth(self) -> None:
+        options = [1, 3, 5]
+        try:
+            idx = options.index(self.minimax_depth)
+        except ValueError:
+            idx = 0
+        next_depth = options[(idx + 1) % len(options)]
+        self.set_ai_depth(next_depth)
+
+    def _cycle_ai_depth(self) -> None:
+        options = [1, 3, 5, 7]
+        try:
+            idx = options.index(self.ai_vs_ai_depth)
+        except ValueError:
+            idx = 0
+        self.ai_vs_ai_depth = options[(idx + 1) % len(options)]
+        if 2 in self.ai_agent_map:
+            self.ai_agent_map[2] = ("AI 1 (Minimax)", MinimaxAgent(player=2, depth=self.ai_vs_ai_depth))
+        self._refresh_ai_vs_ai_sidebar_labels()
+        self.message = f"Minimax depth now {self.ai_vs_ai_depth}."
+
+    def _cycle_mcts_iterations(self) -> None:
+        options = [200, 500, 800, 1200]
+        try:
+            idx = options.index(self.mcts_iterations)
+        except ValueError:
+            idx = 0
+        self.mcts_iterations = options[(idx + 1) % len(options)]
+        if 1 in self.ai_agent_map:
+            self.ai_agent_map[1] = ("AI 2 (MCTS)", MCTSAgent(player=1, iterations=self.mcts_iterations))
+        self._refresh_ai_vs_ai_sidebar_labels()
+        self.message = f"MCTS iterations now {self.mcts_iterations}."
+
+    def _toggle_ai_pause(self) -> None:
+        self.ai_vs_ai_pause = not self.ai_vs_ai_pause
+        self._refresh_ai_vs_ai_sidebar_labels()
+        self.message = "Simulation paused." if self.ai_vs_ai_pause else "Simulation resumed."
+        self.last_ai_tick = pygame.time.get_ticks()
+
+    def _return_to_menu(self) -> None:
+        self.mode = None
+        pygame.display.set_caption("Shologuti - Sholo Guti Arena")
+        self._set_sidebar_buttons([])
+        self.selected_origin = None
+        self.highlight_moves = []
+        self.message = None
+        self.pending_ai = False
+        self.ai_vs_ai_pause = False
 
     def _push_history(self) -> None:
         self.history.append(copy.deepcopy(self.game))
@@ -263,10 +435,20 @@ class ShologutiPygameApp:
     # Input handling
     # ------------------------------------------------------------------
     def handle_click(self, pos: Tuple[int, int]) -> None:
-        for button in self.buttons:
+        if self.mode is None:
+            for button in self.menu_buttons:
+                if button.contains(pos):
+                    self._handle_menu_button(button)
+                    return
+            return
+
+        for button in self.sidebar_buttons:
             if button.contains(pos):
                 self._handle_button(button)
                 return
+
+        if self.mode == GameMode.AI_VS_AI:
+            return
 
         if self.game.turn.to_move != self.human_player:
             return
@@ -280,7 +462,9 @@ class ShologutiPygameApp:
         occupant = self.game.board.occupant(clicked)
         if occupant == self.human_player:
             self.selected_origin = clicked
-            self.highlight_moves = self.game.board.legal_moves(clicked, self.human_player, require_capture=self._must_continue())
+            self.highlight_moves = self.game.board.legal_moves(
+                clicked, self.human_player, require_capture=self._must_continue()
+            )
             return
 
         if self.selected_origin is None:
@@ -302,27 +486,49 @@ class ShologutiPygameApp:
             self.message = "You win!" if result.winner == self.human_player else "AI wins!"
             self.selected_origin = None
             self.highlight_moves = []
+            self.pending_ai = False
             return
 
         if result.must_continue:
             self.selected_origin = move.target
             self.highlight_moves = self.game.board.capture_moves(move.target, self.human_player)
-            self.message = "Continue capture with the same piece"
+            self.message = "Continue capture with the same piece."
         else:
             self.selected_origin = None
             self.highlight_moves = []
             self.pending_ai = True
 
     def _handle_button(self, button: Button) -> None:
-        if button.label.startswith("New"):
-            self.reset()
-        elif button.label.startswith("Undo"):
-            self.undo()
-        elif button.label.startswith("Depth"):
-            next_depth = {1: 3, 3: 5, 5: 1}[self.agent.depth if self.agent.depth in {1, 3, 5} else 3]
-            self.set_ai_depth(next_depth)
-        elif button.label.startswith("Switch"):
-            self.toggle_player_color()
+        if button.key == "menu":
+            self._return_to_menu()
+            return
+
+        if self.mode == GameMode.HUMAN_VS_AI:
+            if button.key == "new":
+                self._reset_human_game()
+            elif button.key == "undo":
+                self.undo()
+            elif button.key == "depth":
+                self._cycle_human_depth()
+            elif button.key == "switch":
+                self.toggle_player_color()
+            return
+
+        if self.mode == GameMode.AI_VS_AI:
+            if button.key == "new":
+                self._reset_ai_battle()
+            elif button.key == "depth":
+                self._cycle_ai_depth()
+            elif button.key == "iter":
+                self._cycle_mcts_iterations()
+            elif button.key == "pause":
+                self._toggle_ai_pause()
+
+    def _handle_menu_button(self, button: Button) -> None:
+        if button.key == "menu_human":
+            self.start_human_mode()
+        elif button.key == "menu_ai":
+            self.start_ai_vs_ai_mode()
 
     def _must_continue(self) -> bool:
         return self.game.turn.pending_capture_from is not None and self.game.turn.to_move == self.human_player
@@ -331,40 +537,111 @@ class ShologutiPygameApp:
     # AI turn
     # ------------------------------------------------------------------
     def update_ai(self) -> None:
-        if self.pending_ai and self.game.turn.to_move == self.ai_player:
-            planned = self.agent.choose_move(self.game)
-            if planned is None:
-                self.message = "AI has no moves. You win!"
-                self.pending_ai = False
-                return
+        if self.mode == GameMode.HUMAN_VS_AI:
+            self._update_human_ai()
+        elif self.mode == GameMode.AI_VS_AI:
+            self._update_ai_battle()
 
-            self._push_history()
-            result = self.game.apply_player_move(self.ai_player, planned.origin, planned.target)
-            if not result.legal:
-                self.message = "AI attempted illegal move"
-                self.pending_ai = False
-                return
+    def _update_human_ai(self) -> None:
+        if not self.pending_ai:
+            return
+        if self.game.turn.to_move != self.ai_player:
+            self.pending_ai = False
+            return
 
-            self.message = self._format_move_message("AI", planned.origin, planned.target, result.captured)
+        if not self.message or "thinking" not in self.message.lower():
+            self.message = "AI thinking..."
 
-            if result.winner is not None:
-                self.message = "AI wins!" if result.winner == self.ai_player else "You win!"
-                self.pending_ai = False
-                self.selected_origin = None
-                self.highlight_moves = []
-                return
+        planned = self.agent.choose_move(self.game)
+        if planned is None:
+            self.message = "AI has no legal moves. You win!"
+            self.pending_ai = False
+            return
 
-            if result.must_continue:
-                # Let AI continue immediately.
-                self.pending_ai = True
-            else:
-                self.pending_ai = False
+        self._push_history()
+        result = self.game.apply_player_move(self.ai_player, planned.origin, planned.target)
+        if not result.legal:
+            self.message = "AI attempted an illegal move."
+            self.pending_ai = False
+            return
+
+        self.selected_origin = None
+        self.highlight_moves = []
+        self.message = self._format_move_message("AI", planned.origin, planned.target, result.captured)
+
+        if result.winner is not None:
+            self.message = "AI wins!" if result.winner == self.ai_player else "You win!"
+            self.pending_ai = False
+            return
+
+        if result.must_continue:
+            self.message += " | AI continues capture..."
+            self.pending_ai = True
+        else:
+            self.pending_ai = False
+            if self.game.turn.to_move == self.human_player:
+                self.message += " | Your turn."
+
+    def _update_ai_battle(self) -> None:
+        if self.ai_vs_ai_pause:
+            return
+
+        now = pygame.time.get_ticks()
+        delay = self.ai_move_delay_ms
+        if self.game.turn.pending_capture_from is not None:
+            delay = max(200, self.ai_move_delay_ms // 2)
+        if now - self.last_ai_tick < delay:
+            return
+
+        player = self.game.turn.to_move
+        agent_info = self.ai_agent_map.get(player)
+        if agent_info is None:
+            return
+
+        label, agent = agent_info
+        planned = agent.choose_move(self.game)
+        if planned is None:
+            winner = opponent(player)
+            winner_label = self.ai_agent_map.get(winner, (f"Player {winner}", None))[0]
+            self.message = f"{label} has no legal moves. {winner_label} wins!"
+            self.ai_vs_ai_pause = True
+            return
+
+        self._push_history()
+        result = self.game.apply_player_move(player, planned.origin, planned.target)
+        if not result.legal:
+            winner = opponent(player)
+            winner_label = self.ai_agent_map.get(winner, (f"Player {winner}", None))[0]
+            self.message = f"{label} attempted illegal move ({result.error}). {winner_label} wins!"
+            self.ai_vs_ai_pause = True
+            return
+
+        self.selected_origin = None
+        self.highlight_moves = []
+        self.message = self._format_move_message(label, planned.origin, planned.target, result.captured)
+
+        if result.winner is not None:
+            winner_label = self.ai_agent_map.get(result.winner, (f"Player {result.winner}", None))[0]
+            self.message = f"{winner_label} wins the match!"
+            self.ai_vs_ai_pause = True
+            return
+
+        if result.must_continue:
+            self.message += " | Continuing capture..."
+            self.last_ai_tick = pygame.time.get_ticks() - self.ai_move_delay_ms // 2
+        else:
+            self.last_ai_tick = pygame.time.get_ticks()
 
     # ------------------------------------------------------------------
     # Rendering helpers
     # ------------------------------------------------------------------
     def draw(self) -> None:
+        if self.mode is None:
+            self._draw_menu()
+            return
+
         self.screen.fill((250, 250, 250))
+
         sidebar_rect = pygame.Rect(
             SIDEBAR_PADDING,
             SIDEBAR_PADDING,
@@ -382,6 +659,24 @@ class ShologutiPygameApp:
         self._draw_pieces()
         self._draw_highlights()
         self._draw_ui()
+
+    def _draw_menu(self) -> None:
+        self.screen.fill((21, 34, 45))
+        title_surface = self.font_large.render("Shologuti AI Arena", True, (236, 239, 241))
+        title_rect = title_surface.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
+        self.screen.blit(title_surface, title_rect)
+
+        subtitle_surface = self.font_medium.render("Choose a mode to begin", True, (176, 190, 197))
+        subtitle_rect = subtitle_surface.get_rect(center=(WINDOW_WIDTH // 2, title_rect.bottom + 40))
+        self.screen.blit(subtitle_surface, subtitle_rect)
+
+        mouse_pos = pygame.mouse.get_pos()
+        for button in self.menu_buttons:
+            button.draw(self.screen, self.font_medium, button.contains(mouse_pos))
+
+        footer_text = self.font_small.render("Press Esc to quit", True, (144, 164, 174))
+        footer_rect = footer_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 60))
+        self.screen.blit(footer_text, footer_rect)
 
     def _draw_edges(self) -> None:
         for node, edges in RAW_ADJACENCY.items():
@@ -458,11 +753,24 @@ class ShologutiPygameApp:
                 y_pos += surface.get_height() + 4
             return y_pos
 
-        status_lines = [
-            f"You are playing as {'Green (2)' if self.human_player == 2 else 'Red (1)'}",
-            f"Turn: {'You' if self.game.turn.to_move == self.human_player else 'AI'}",
-            f"Depth: {self.agent.depth} - press the button below to change",
-        ]
+        if self.mode == GameMode.HUMAN_VS_AI:
+            status_lines = [
+                "Mode: Human vs AI",
+                f"Playing as {'Green (2)' if self.human_player == 2 else 'Red (1)'}",
+                f"Turn: {'You' if self.game.turn.to_move == self.human_player else 'AI'}",
+                f"AI depth: {self.minimax_depth}",
+            ]
+        else:
+            current_label = self.ai_agent_map.get(
+                self.game.turn.to_move, (f"Player {self.game.turn.to_move}", None)
+            )[0]
+            status_lines = [
+                "Mode: AI vs AI",
+                f"Turn: {current_label}",
+                f"Minimax depth: {self.ai_vs_ai_depth}",
+                f"MCTS iterations: {self.mcts_iterations}",
+                f"Paused: {'Yes' if self.ai_vs_ai_pause else 'No'}",
+            ]
 
         for line in status_lines:
             cursor_y = draw_wrapped(line, self.font_medium, TEXT_COLOR, cursor_y)
@@ -476,12 +784,17 @@ class ShologutiPygameApp:
         else:
             cursor_y += 12
 
-        remaining_you = self.game.remaining(self.human_player)
-        remaining_ai = self.game.remaining(self.ai_player)
-        counts_text = f"Pieces - You: {remaining_you}  |  AI: {remaining_ai}"
+        if self.mode == GameMode.HUMAN_VS_AI:
+            remaining_you = self.game.remaining(self.human_player)
+            remaining_ai = self.game.remaining(self.ai_player)
+            counts_text = f"Pieces - You: {remaining_you}  |  AI: {remaining_ai}"
+        else:
+            counts_text = (
+                f"Pieces - Green (AI 1): {self.game.remaining(2)}  |  Red (AI 2): {self.game.remaining(1)}"
+            )
         draw_wrapped(counts_text, self.font_small, TEXT_COLOR, cursor_y)
 
-        for button in self.buttons:
+        for button in self.sidebar_buttons:
             button.draw(self.screen, self.font_small, button.contains(mouse_pos))
 
     # ------------------------------------------------------------------
@@ -509,6 +822,11 @@ class ShologutiPygameApp:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    if self.mode is None:
+                        running = False
+                    else:
+                        self._return_to_menu()
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self.handle_click(event.pos)
 
