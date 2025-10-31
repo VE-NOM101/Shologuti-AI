@@ -62,6 +62,12 @@ python/
 # optional: create a venv first
 python -m pip install -e .
 
+# start a console match against the minimax AI
+python -m shologuti.cli
+
+# launch the pygame UI (human vs AI)
+python -m shologuti.client.pygame_app
+
 # run the lobby/game server
 python -m shologuti.server --host 0.0.0.0 --port 11111 --data-dir ./data
 
