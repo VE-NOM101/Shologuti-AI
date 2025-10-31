@@ -106,13 +106,36 @@ RAW_GUTI_Y = [
     634,
 ]
 
-OFFSET_X = 60
-OFFSET_Y = 80
+MIN_RAW_X = min(RAW_GUTI_X[1:])
+MAX_RAW_X = max(RAW_GUTI_X[1:])
+MIN_RAW_Y = min(RAW_GUTI_Y[1:])
+MAX_RAW_Y = max(RAW_GUTI_Y[1:])
+
+SIDEBAR_PADDING = 40
+SIDEBAR_WIDTH = 220
+SIDEBAR_BG = (236, 239, 241)
+BOARD_PADDING = 30
+BOARD_TOP = 40
+
+OFFSET_X = SIDEBAR_PADDING + SIDEBAR_WIDTH + BOARD_PADDING - MIN_RAW_X
+OFFSET_Y = BOARD_TOP + BOARD_PADDING - MIN_RAW_Y
 
 NODE_COORDS: Dict[int, Tuple[int, int]] = {
     idx: (RAW_GUTI_X[idx] + OFFSET_X, RAW_GUTI_Y[idx] + OFFSET_Y)
     for idx in range(1, len(RAW_GUTI_X))
 }
+
+MIN_X = min(coord[0] for coord in NODE_COORDS.values())
+MAX_X = max(coord[0] for coord in NODE_COORDS.values())
+MIN_Y = min(coord[1] for coord in NODE_COORDS.values())
+MAX_Y = max(coord[1] for coord in NODE_COORDS.values())
+
+BOARD_RECT = pygame.Rect(
+    MIN_X - BOARD_PADDING,
+    MIN_Y - BOARD_PADDING,
+    (MAX_X - MIN_X) + 2 * BOARD_PADDING,
+    (MAX_Y - MIN_Y) + 2 * BOARD_PADDING,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -165,11 +188,23 @@ class ShologutiPygameApp:
         self.font_medium = pygame.font.Font(None, 32)
         self.font_large = pygame.font.Font(None, 48)
 
+        button_labels = ["New Game", "Undo", "Depth: 3", "Switch Color"]
+        button_height = 46
+        button_spacing = 12
+        total_height = len(button_labels) * button_height + (len(button_labels) - 1) * button_spacing
+        button_start_y = WINDOW_HEIGHT - SIDEBAR_PADDING - total_height
+
         self.buttons = [
-            Button("New Game", pygame.Rect(40, WINDOW_HEIGHT - 70, 140, 45)),
-            Button("Undo", pygame.Rect(200, WINDOW_HEIGHT - 70, 100, 45)),
-            Button("Depth: 3", pygame.Rect(320, WINDOW_HEIGHT - 70, 140, 45)),
-            Button("Switch Color", pygame.Rect(480, WINDOW_HEIGHT - 70, 160, 45)),
+            Button(
+                label,
+                pygame.Rect(
+                    SIDEBAR_PADDING,
+                    button_start_y + index * (button_height + button_spacing),
+                    SIDEBAR_WIDTH,
+                    button_height,
+                ),
+            )
+            for index, label in enumerate(button_labels)
         ]
 
         self.game = GameRules()
@@ -330,8 +365,17 @@ class ShologutiPygameApp:
     # ------------------------------------------------------------------
     def draw(self) -> None:
         self.screen.fill((250, 250, 250))
-        board_rect = pygame.Rect(280, 20, 700, 700)
-        pygame.draw.rect(self.screen, BOARD_BG, board_rect, border_radius=12)
+        sidebar_rect = pygame.Rect(
+            SIDEBAR_PADDING,
+            SIDEBAR_PADDING,
+            SIDEBAR_WIDTH,
+            WINDOW_HEIGHT - 2 * SIDEBAR_PADDING,
+        )
+        pygame.draw.rect(self.screen, SIDEBAR_BG, sidebar_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (189, 189, 189), sidebar_rect, width=2, border_radius=12)
+
+        pygame.draw.rect(self.screen, BOARD_BG, BOARD_RECT, border_radius=12)
+        pygame.draw.rect(self.screen, (189, 189, 189), BOARD_RECT, width=2, border_radius=12)
 
         self._draw_edges()
         self._draw_nodes()
@@ -384,29 +428,61 @@ class ShologutiPygameApp:
 
     def _draw_ui(self) -> None:
         mouse_pos = pygame.mouse.get_pos()
-        for button in self.buttons:
-            button.draw(self.screen, self.font_small, button.contains(mouse_pos))
+
+        text_x = SIDEBAR_PADDING + 16
+        cursor_y = SIDEBAR_PADDING + 16
+        max_text_width = SIDEBAR_WIDTH - 32
+
+        def draw_wrapped(text: str, font: pygame.font.Font, color: Tuple[int, int, int], top: int) -> int:
+            if not text:
+                return top
+            words = text.split()
+            if not words:
+                return top
+
+            lines: List[str] = []
+            current = words[0]
+            for word in words[1:]:
+                extended = f"{current} {word}"
+                if font.size(extended)[0] <= max_text_width:
+                    current = extended
+                else:
+                    lines.append(current)
+                    current = word
+            lines.append(current)
+
+            y_pos = top
+            for line_text in lines:
+                surface = font.render(line_text, True, color)
+                self.screen.blit(surface, (text_x, y_pos))
+                y_pos += surface.get_height() + 4
+            return y_pos
 
         status_lines = [
             f"You are playing as {'Green (2)' if self.human_player == 2 else 'Red (1)'}",
             f"Turn: {'You' if self.game.turn.to_move == self.human_player else 'AI'}",
-            f"Depth: {self.agent.depth} (toggle button to change)",
+            f"Depth: {self.agent.depth} - press the button below to change",
         ]
 
-        for idx, line in enumerate(status_lines):
-            text = self.font_medium.render(line, True, TEXT_COLOR)
-            self.screen.blit(text, (40, 40 + idx * 32))
+        for line in status_lines:
+            cursor_y = draw_wrapped(line, self.font_medium, TEXT_COLOR, cursor_y)
+            cursor_y += 4
+
+        cursor_y += 8
 
         if self.message:
-            msg = self.font_small.render(self.message, True, (94, 53, 177))
-            self.screen.blit(msg, (40, 140))
+            cursor_y = draw_wrapped(self.message, self.font_small, (94, 53, 177), cursor_y)
+            cursor_y += 8
+        else:
+            cursor_y += 12
 
         remaining_you = self.game.remaining(self.human_player)
         remaining_ai = self.game.remaining(self.ai_player)
-        counts = self.font_small.render(
-            f"Pieces — You: {remaining_you}  |  AI: {remaining_ai}", True, TEXT_COLOR
-        )
-        self.screen.blit(counts, (40, 180))
+        counts_text = f"Pieces - You: {remaining_you}  |  AI: {remaining_ai}"
+        draw_wrapped(counts_text, self.font_small, TEXT_COLOR, cursor_y)
+
+        for button in self.buttons:
+            button.draw(self.screen, self.font_small, button.contains(mouse_pos))
 
     # ------------------------------------------------------------------
     # Utility helpers
