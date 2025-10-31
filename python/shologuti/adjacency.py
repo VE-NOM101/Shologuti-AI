@@ -1,4 +1,4 @@
-"""Board adjacency definitions for the Shologuti game graph.
+"""Board adjacency definitions for the Sixteen - A Game of Tradition graph.
 
 The original Java implementation enumerates, for each node, the immediate
 neighbor and (optionally) the landing spot when capturing over that neighbor.

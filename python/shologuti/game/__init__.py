@@ -1,3 +1,3 @@
-"""Game logic primitives for Shologuti."""
+"""Game logic primitives for Sixteen - A Game of Tradition."""
 
 

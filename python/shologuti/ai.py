@@ -1,4 +1,4 @@
-"""AI agents for the Shologuti 16-piece game."""
+"""AI agents for Sixteen - A Game of Tradition."""
 
 from __future__ import annotations
 

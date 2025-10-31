@@ -1,7 +1,7 @@
-# Shologuti Pygame Client
+# Sixteen - A Game of Tradition Pygame Client
 
 This directory now contains a focused, standalone Pygame version of the
-Shologuti (Sixteen Soldiers) board game. The codebase provides:
+Sixteen - A Game of Tradition board game. The codebase provides:
 
 - Accurate implementation of the 37-node board, capture rules, and win logic.
 - A **Human vs AI** mode powered by a minimax agent with alpha-beta pruning.

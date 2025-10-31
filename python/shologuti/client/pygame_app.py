@@ -1,4 +1,4 @@
-"""Pygame front-end for the Shologuti 16-piece game."""
+"""Pygame front-end for Sixteen - A Game of Tradition."""
 
 from __future__ import annotations
 
@@ -185,10 +185,10 @@ class GameMode(Enum):
     AI_VS_AI = "ai_vs_ai"
 
 
-class ShologutiPygameApp:
+class SixteenPygameApp:
     def __init__(self) -> None:
         pygame.init()
-        pygame.display.set_caption("Shologuti - Sholo Guti Arena")
+        pygame.display.set_caption("Sixteen - A Game of Tradition")
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
 
@@ -274,7 +274,7 @@ class ShologutiPygameApp:
     # ------------------------------------------------------------------
     def start_human_mode(self) -> None:
         self.mode = GameMode.HUMAN_VS_AI
-        pygame.display.set_caption("Shologuti - Human vs AI (Pygame)")
+        pygame.display.set_caption("Sixteen - A Game of Tradition: Human vs AI")
         self._set_sidebar_buttons(
             [
                 ("new", "New Game", (56, 142, 60)),
@@ -310,7 +310,7 @@ class ShologutiPygameApp:
 
     def start_ai_vs_ai_mode(self) -> None:
         self.mode = GameMode.AI_VS_AI
-        pygame.display.set_caption("Shologuti - AI vs AI (Pygame)")
+        pygame.display.set_caption("Sixteen - A Game of Tradition: AI vs AI")
         self._set_sidebar_buttons(
             [
                 ("new", "New Battle", (56, 142, 60)),
@@ -418,7 +418,7 @@ class ShologutiPygameApp:
 
     def _return_to_menu(self) -> None:
         self.mode = None
-        pygame.display.set_caption("Shologuti - Sholo Guti Arena")
+        pygame.display.set_caption("Sixteen - A Game of Tradition")
         self._set_sidebar_buttons([])
         self.selected_origin = None
         self.highlight_moves = []
@@ -662,7 +662,7 @@ class ShologutiPygameApp:
 
     def _draw_menu(self) -> None:
         self.screen.fill((21, 34, 45))
-        title_surface = self.font_large.render("Shologuti AI Arena", True, (236, 239, 241))
+        title_surface = self.font_large.render("Sixteen - A Game of Tradition", True, (236, 239, 241))
         title_rect = title_surface.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title_surface, title_rect)
 
@@ -840,7 +840,7 @@ class ShologutiPygameApp:
 
 
 def main() -> int:
-    app = ShologutiPygameApp()
+    app = SixteenPygameApp()
     app.run()
     return 0
 

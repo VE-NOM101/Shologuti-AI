@@ -1,4 +1,4 @@
-"""Board state and move validation for the Shologuti game."""
+"""Board state and move validation for Sixteen - A Game of Tradition."""
 
 from __future__ import annotations
 

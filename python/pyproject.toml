@@ -5,10 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "shologuti"
 version = "0.1.0"
-description = "Pygame implementation of the Shologuti 16-piece board game"
+description = "Pygame implementation of Sixteen - A Game of Tradition"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{name = "Shologuti Team"}]
+authors = [{name = "Sixteen - A Game of Tradition Team"}]
 dependencies = [
   "pygame>=2.5"
 ]
