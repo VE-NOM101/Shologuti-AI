@@ -45,13 +45,13 @@ class BoardState:
         for i in self._slots:
             self._slots[i] = None
 
-        # Opponent pieces populate the top of the board (1-16)
+        # Red pieces populate the top of the board (1-16)
         for i in range(1, 17):
-            self._slots[i] = 2
-
-        # Current player pieces sit on the bottom (22-37)
-        for i in range(22, 38):
             self._slots[i] = 1
+
+        # Green pieces sit on the bottom (22-37)
+        for i in range(22, 38):
+            self._slots[i] = 2
 
     def snapshot(self) -> Dict[int, Optional[PlayerId]]:
         return dict(self._slots)
