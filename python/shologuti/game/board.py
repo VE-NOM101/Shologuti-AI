@@ -1,5 +1,3 @@
-"""Board state and move validation for Sixteen - A Game of Tradition."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,9 +6,10 @@ from typing import Dict, Iterable, List, Optional
 from ..adjacency import Edge, neighbors
 
 
-PlayerId = int  # 1 or 2
+PlayerId = int
 
 
+# Flip between players
 def opponent(player: PlayerId) -> PlayerId:
     return 2 if player == 1 else 1
 
@@ -32,24 +31,18 @@ class MoveResult:
 
 
 class BoardState:
-    """Represents the full board and pieces for an active match."""
-
     def __init__(self) -> None:
-        # 1-indexed board positions mirror the original Java implementation.
         self._slots: Dict[int, Optional[PlayerId]] = {i: None for i in range(1, 38)}
         self.reset()
 
     def reset(self) -> None:
-        """Return the board to its initial state."""
-
+        # Rebuild the initial layout
         for i in self._slots:
             self._slots[i] = None
 
-        # Red pieces populate the top of the board (1-16)
         for i in range(1, 17):
             self._slots[i] = 1
 
-        # Green pieces sit on the bottom (22-37)
         for i in range(22, 38):
             self._slots[i] = 2
 
@@ -63,6 +56,7 @@ class BoardState:
         self._slots[node] = player
 
     def simple_moves(self, origin: int, player: PlayerId) -> List[MoveOption]:
+        # Non-capturing moves from a node
         moves: List[MoveOption] = []
         if self.occupant(origin) != player:
             return moves
@@ -73,6 +67,7 @@ class BoardState:
         return moves
 
     def capture_moves(self, origin: int, player: PlayerId) -> List[MoveOption]:
+        # Capturing moves that hop over opponents
         moves: List[MoveOption] = []
         if self.occupant(origin) != player:
             return moves
@@ -91,6 +86,7 @@ class BoardState:
         player: PlayerId,
         require_capture: bool = False,
     ) -> List[MoveOption]:
+        # Combine capture and quiet moves respecting rules
         captures = self.capture_moves(origin, player)
         if require_capture:
             return captures
@@ -106,6 +102,7 @@ class BoardState:
         target: int,
         require_capture: bool = False,
     ) -> MoveResult:
+        # Apply a move and report outcome
         options = self.legal_moves(origin, player, require_capture=require_capture)
         option = next((move for move in options if move.target == target), None)
 
@@ -122,7 +119,6 @@ class BoardState:
         winner = self._check_winner()
         must_continue = False
         if captured is not None and winner is None:
-            # Verify if additional captures are available from the landing node.
             additional = self.capture_moves(target, player)
             must_continue = len(additional) > 0
 
@@ -132,6 +128,7 @@ class BoardState:
         return sum(1 for slot in self._slots.values() if slot == player)
 
     def _check_winner(self) -> Optional[PlayerId]:
+        # Detect empty sides
         red = self.remaining(1)
         green = self.remaining(2)
         if red == 0 and green == 0:
@@ -143,8 +140,7 @@ class BoardState:
         return None
 
     def any_capture_available(self, player: PlayerId) -> bool:
-        """Return ``True`` if ``player`` has at least one capturing move."""
-
+        # Quick scan for mandatory captures
         for origin, occupant in self._slots.items():
             if occupant != player:
                 continue

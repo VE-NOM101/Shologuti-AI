@@ -14,8 +14,7 @@ from cloning the repo to shipping releases without hunting for extra context.
 - **Stack**: Python 3.11, Pygame for rendering and input, REST-based Firebase
   Authentication for optional sign-in, packaged with Hatchling.
 - **Notable capabilities**
-  - Accurate 37-node graph representation and capture rules identical to the
-    original Java edition.
+  - Accurate 37-node graph representation and capture rules
   - Human vs AI mode with a configurable depth-limited minimax engine.
   - AI vs AI showcase where minimax (Green) battles an MCTS agent (Red).
   - In-game controls for undo, AI tuning, player color swap, and pausing AI
@@ -230,11 +229,4 @@ Publish the wheel/SDist to PyPI or a private index as needed.
 
 ---
 
-## 11. Credits & License
 
-- Codebase authored by the Sixteen – A Game of Tradition team; Python client by
-  the contributors to this repository.
-- License: not formally published in the repo. Clarify with the project owners
-  before redistribution.
-
-Enjoy the game, and feel free to open issues or PRs for improvements!

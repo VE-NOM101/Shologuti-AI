@@ -1,5 +1,3 @@
-"""AI agents for Sixteen - A Game of Tradition."""
-
 from __future__ import annotations
 
 import copy
@@ -17,15 +15,12 @@ Score = float
 
 @dataclass(frozen=True)
 class PlannedMove:
-    """Represents a move chosen by an AI agent."""
-
     origin: int
     target: int
 
 
+# Determine if someone already won
 def _winner_for_state(state: GameRules) -> Optional[PlayerId]:
-    """Return the winner for ``state`` if the match has ended."""
-
     red_remaining = state.remaining(1)
     green_remaining = state.remaining(2)
 
@@ -36,16 +31,14 @@ def _winner_for_state(state: GameRules) -> Optional[PlayerId]:
     if green_remaining == 0:
         return 1
 
-    # No pieces captured but current player cannot move.
     if not _generate_moves(state):
         return opponent(state.turn.to_move)
 
     return None
 
 
+# List legal moves for a player
 def _generate_moves(state: GameRules, for_player: Optional[PlayerId] = None) -> List[MoveOption]:
-    """Enumerate all legal moves for the player who is about to act."""
-
     player = state.turn.to_move if for_player is None else for_player
 
     enforce_origin: Optional[int] = None
@@ -53,7 +46,6 @@ def _generate_moves(state: GameRules, for_player: Optional[PlayerId] = None) -> 
         enforce_origin = state.turn.pending_capture_from
 
     if enforce_origin is not None:
-        # If the expected piece is missing, no legal continuations remain.
         if state.board.occupant(enforce_origin) != player:
             return []
         forced = state.board.capture_moves(enforce_origin, player)
@@ -77,15 +69,12 @@ def _generate_moves(state: GameRules, for_player: Optional[PlayerId] = None) -> 
 
 
 class MinimaxAgent:
-    """A depth-limited minimax agent with alpha-beta pruning."""
-
     def __init__(self, player: PlayerId, depth: int = 3) -> None:
         self.player = player
         self.depth = depth
 
     def choose_move(self, state: GameRules) -> Optional[PlannedMove]:
-        """Return the best move for this agent from ``state``."""
-
+        # Single-ply search entry point
         moves = _generate_moves(state)
         if not moves:
             return None
@@ -118,6 +107,7 @@ class MinimaxAgent:
         return PlannedMove(origin=best_move.origin, target=best_move.target)
 
     def _minimax(self, state: GameRules, depth: int, alpha: float, beta: float) -> Score:
+        # Depth-limited minimax core
         winner = _winner_for_state(state)
         if winner is not None:
             if winner == self.player:
@@ -170,6 +160,7 @@ class MinimaxAgent:
         return value
 
     def _evaluate(self, state: GameRules) -> Score:
+        # Simple material plus mobility score
         my_pieces = state.remaining(self.player)
         opp_pieces = state.remaining(opponent(self.player))
         material = my_pieces - opp_pieces
@@ -190,8 +181,6 @@ class MinimaxAgent:
 
 
 class _MCTSNode:
-    """Internal tree node used by :class:`MCTSAgent`."""
-
     def __init__(
         self,
         state: GameRules,
@@ -226,8 +215,6 @@ class _MCTSNode:
 
 
 class MCTSAgent:
-    """Monte Carlo Tree Search agent."""
-
     def __init__(
         self,
         player: PlayerId,
@@ -239,18 +226,15 @@ class MCTSAgent:
         self.exploration_constant = exploration_constant
 
     def choose_move(self, state: GameRules) -> Optional[PlannedMove]:
+        # Run the requested number of rollouts
         root = _MCTSNode(copy.deepcopy(state), parent=None, move=None)
 
         for _ in range(self.iterations):
             node = root
-
-            # Selection
             while node.is_fully_expanded() and not node.is_terminal():
                 if not node.children:
                     break
                 node = node.best_child(self.exploration_constant)
-
-            # Expansion
             if not node.is_terminal() and node.untried_moves:
                 move_index = random.randrange(len(node.untried_moves))
                 move = node.untried_moves.pop(move_index)
@@ -263,11 +247,7 @@ class MCTSAgent:
                     node = child
                 else:
                     continue
-
-            # Simulation
             reward = self._rollout(node.state)
-
-            # Backpropagation
             while node is not None:
                 node.visits += 1
                 node.wins += reward
@@ -282,6 +262,7 @@ class MCTSAgent:
         return PlannedMove(origin=best_child.move.origin, target=best_child.move.target)
 
     def _rollout(self, state: GameRules) -> float:
+        # Play random moves until outcome
         simulation = copy.deepcopy(state)
         steps = 0
         max_steps = 200

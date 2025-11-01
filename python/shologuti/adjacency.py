@@ -1,36 +1,15 @@
-"""Board adjacency definitions for the Sixteen - A Game of Tradition graph.
-
-The original Java implementation enumerates, for each node, the immediate
-neighbor and (optionally) the landing spot when capturing over that neighbor.
-We mirror the data here so the rest of the Python code can share a single
-source of truth for move validation.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, List, Tuple
+from typing import Dict, Iterator, List, Tuple
 
 
 @dataclass(frozen=True)
 class Edge:
-    """Represents a directed neighbor relationship on the board.
-
-    Attributes
-    ----------
-    neighbor:
-        The adjacent node index that can be reached with a simple move.
-    landing:
-        The landing node index when jumping over ``neighbor`` to capture a
-        piece. ``None`` indicates that no capture move exists for that
-        neighbor.
-    """
-
     neighbor: int
     landing: int | None
 
 
-# fmt: off
 RAW_ADJACENCY: Dict[int, List[Tuple[int, int | None]]] = {
     1:  [(2, 3), (4, 9)],
     2:  [(1, None), (5, 9), (3, None)],
@@ -70,21 +49,18 @@ RAW_ADJACENCY: Dict[int, List[Tuple[int, int | None]]] = {
     36: [(35, None), (33, 29), (37, None)],
     37: [(36, 35), (34, 29)],
 }
-# fmt: on
 
 
+# Collect edges for a node
 def neighbors(node: int) -> List[Edge]:
-    """Return all outgoing edges from ``node`` as :class:`Edge` objects."""
-
     try:
         return [Edge(neighbor=nb, landing=landing) for nb, landing in RAW_ADJACENCY[node]]
-    except KeyError as exc:  # pragma: no cover - defensive guard
+    except KeyError as exc:
         raise ValueError(f"Unknown node index: {node}") from exc
 
 
+# Iterate across every edge
 def all_edges() -> Iterator[tuple[int, Edge]]:
-    """Iterate over every ``(node, edge)`` pair on the board."""
-
     for node, edges in RAW_ADJACENCY.items():
         for nb, landing in edges:
             yield node, Edge(neighbor=nb, landing=landing)

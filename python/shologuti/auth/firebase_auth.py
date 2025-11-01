@@ -1,5 +1,3 @@
-"""Helpers for Firebase Authentication with email/password accounts."""
-
 from __future__ import annotations
 
 import os
@@ -10,13 +8,10 @@ import requests
 
 
 class FirebaseAuthError(Exception):
-    """Raised when Firebase Authentication returns an error."""
-
+    pass
 
 @dataclass
 class FirebaseUser:
-    """Represents an authenticated Firebase user session."""
-
     uid: str
     email: str
     id_token: str
@@ -25,11 +20,10 @@ class FirebaseUser:
 
 
 class FirebaseAuthClient:
-    """Small helper client around Firebase Identity Toolkit REST API."""
-
     _IDENTITY_BASE_URL = "https://identitytoolkit.googleapis.com/v1"
 
     def __init__(self, api_key: Optional[str] = None, timeout: float = 10.0) -> None:
+        # Resolve credentials up front
         self.api_key = (api_key or os.getenv("FIREBASE_WEB_API_KEY", "")).strip()
         if not self.api_key:
             raise FirebaseAuthError(
@@ -37,12 +31,8 @@ class FirebaseAuthClient:
             )
         self.timeout = timeout
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
     def register_user(self, name: str, email: str, password: str) -> FirebaseUser:
-        """Create a new Firebase user with the provided credentials."""
-
+        # Create an email/password account
         payload = {
             "email": email,
             "password": password,
@@ -65,8 +55,7 @@ class FirebaseAuthClient:
         return user
 
     def login_user(self, email: str, password: str) -> FirebaseUser:
-        """Authenticate an existing Firebase user."""
-
+        # Authenticate and fetch session tokens
         payload = {
             "email": email,
             "password": password,
@@ -82,10 +71,8 @@ class FirebaseAuthClient:
             display_name=data.get("displayName"),
         )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
     def _apply_display_name(self, user: FirebaseUser, display_name: str) -> FirebaseUser:
+        # Update the profile metadata
         payload = {
             "idToken": user.id_token,
             "displayName": display_name,
@@ -102,15 +89,16 @@ class FirebaseAuthClient:
         )
 
     def _post(self, path: str, payload: dict) -> dict:
+        # Minimal wrapper over the REST call
         url = f"{self._IDENTITY_BASE_URL}/{path}?key={self.api_key}"
         try:
             response = requests.post(url, json=payload, timeout=self.timeout)
-        except requests.RequestException as exc:  # pragma: no cover - network failures
+        except requests.RequestException as exc:
             raise FirebaseAuthError("Could not reach Firebase Authentication service.") from exc
 
         try:
             data = response.json()
-        except ValueError as exc:  # pragma: no cover - defensive
+        except ValueError as exc:
             raise FirebaseAuthError("Unexpected response from Firebase Authentication.") from exc
 
         if response.status_code != 200:
@@ -120,6 +108,7 @@ class FirebaseAuthClient:
 
     @staticmethod
     def _decode_error(message: dict | str) -> str:
+        # Map Firebase errors to friendly text
         if isinstance(message, str):
             return message
 

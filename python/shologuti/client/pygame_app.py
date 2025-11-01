@@ -1,5 +1,3 @@
-"""Pygame front-end for Sixteen - A Game of Tradition."""
-
 from __future__ import annotations
 
 import copy
@@ -10,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     import pygame
-except ImportError as exc:  # pragma: no cover - handled at runtime
+except ImportError as exc:
     raise SystemExit(
         "Pygame is required for the graphical client. Install it with 'pip install pygame'."
     ) from exc
@@ -20,11 +18,6 @@ from ..ai import MCTSAgent, MinimaxAgent
 from ..auth.firebase_auth import FirebaseAuthClient, FirebaseAuthError, FirebaseUser
 from ..game.board import MoveOption, PlayerId, opponent
 from ..game.rules import GameRules
-
-
-# ---------------------------------------------------------------------------
-# Board layout (shares the same coordinates as the Tkinter UI)
-# ---------------------------------------------------------------------------
 
 RAW_GUTI_X = [
     0,
@@ -139,11 +132,6 @@ BOARD_RECT = pygame.Rect(
     (MAX_Y - MIN_Y) + 2 * BOARD_PADDING,
 )
 
-
-# ---------------------------------------------------------------------------
-# Rendering configuration
-# ---------------------------------------------------------------------------
-
 WINDOW_WIDTH = 1020
 WINDOW_HEIGHT = 760
 FPS = 30
@@ -160,11 +148,6 @@ TEXT_COLOR = (33, 33, 33)
 
 PIECE_RADIUS = 18
 BASE_RADIUS = 6
-
-
-# ---------------------------------------------------------------------------
-# Auth screen layout configuration
-# ---------------------------------------------------------------------------
 
 AUTH_PANEL_WIDTH = 520
 AUTH_FIELD_WIDTH = 360
@@ -302,7 +285,7 @@ class SixteenPygameApp:
         self.mode: Optional[GameMode] = None
 
         self.game = GameRules()
-        self.human_player: PlayerId = 2  # Green traditionally starts
+        self.human_player: PlayerId = 2
         self.ai_player: PlayerId = opponent(self.human_player)
         self.minimax_depth: int = 3
         self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
@@ -348,10 +331,8 @@ class SixteenPygameApp:
     def _refresh_menu_buttons(self) -> None:
         self.menu_buttons = self._build_menu_buttons()
 
-    # ------------------------------------------------------------------
-    # Authentication helpers
-    # ------------------------------------------------------------------
     def _create_auth_inputs(self) -> Dict[str, TextInput]:
+        # Base text fields for auth screens
         return {
             "name": TextInput(
                 key="name",
@@ -383,6 +364,7 @@ class SixteenPygameApp:
         return ["name", "email", "password"]
 
     def _configure_auth_inputs(self) -> None:
+        # Toggle which auth fields are live
         fields = self._visible_auth_fields()
 
         for key, field in self.auth_inputs.items():
@@ -404,6 +386,7 @@ class SixteenPygameApp:
         self._layout_auth_controls()
 
     def _layout_auth_controls(self) -> None:
+        # Position auth widgets on screen
         fields = self._visible_auth_fields()
 
         field_width = AUTH_FIELD_WIDTH
@@ -498,11 +481,13 @@ class SixteenPygameApp:
             self.auth_panel_rect.height = new_height
 
     def _set_active_input(self, key: Optional[str]) -> None:
+        # Highlight the active field
         self.active_input_key = key
         for field in self.auth_inputs.values():
             field.active = field.key == key
 
     def _focus_next_input(self, backwards: bool = False) -> None:
+        # Tab between auth fields
         fields = self._visible_auth_fields()
         if not fields:
             self._set_active_input(None)
@@ -521,6 +506,7 @@ class SixteenPygameApp:
         self._set_active_input(fields[next_index])
 
     def _handle_auth_click(self, pos: Tuple[int, int]) -> None:
+        # Mouse interactions on auth view
         if self.auth_submit_button.contains(pos):
             if self.auth_loading:
                 return
@@ -541,6 +527,7 @@ class SixteenPygameApp:
         self._set_active_input(None)
 
     def _handle_auth_keydown(self, event: pygame.event.Event) -> bool:
+        # Keyboard navigation for inputs
         if event.key == pygame.K_TAB:
             self._focus_next_input(backwards=bool(event.mod & pygame.KMOD_SHIFT))
             return True
@@ -573,6 +560,7 @@ class SixteenPygameApp:
         return False
 
     def _toggle_auth_mode(self) -> None:
+        # Flip between login/register
         self.auth_mode = AuthMode.REGISTER if self.auth_mode == AuthMode.LOGIN else AuthMode.LOGIN
         if self.auth_mode == AuthMode.LOGIN:
             self.auth_inputs["name"].value = ""
@@ -582,6 +570,7 @@ class SixteenPygameApp:
         self._configure_auth_inputs()
 
     def _submit_auth(self) -> None:
+        # Validate and send auth request
         if self.auth_loading:
             return
         if self.auth_client is None:
@@ -623,7 +612,7 @@ class SixteenPygameApp:
             self.auth_loading = False
             self.auth_inputs["password"].value = ""
             return
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             self.auth_error_message = f"Unexpected error: {exc}"
             self.auth_status_message = None
             self.auth_loading = False
@@ -640,6 +629,7 @@ class SixteenPygameApp:
         self._return_to_menu()
 
     def logout(self) -> None:
+        # Clear session and return home
         self._return_to_menu()
         self.current_user = None
         if self.auth_client is not None:
@@ -653,6 +643,7 @@ class SixteenPygameApp:
         self._refresh_menu_buttons()
 
     def _set_sidebar_buttons(self, specs: List[Tuple[str, str, Tuple[int, int, int]]]) -> None:
+        # Configure sidebar actions
         button_height = 46
         button_spacing = 12
         if not specs:
@@ -677,10 +668,8 @@ class SixteenPygameApp:
             self.sidebar_buttons.append(button)
             self.button_lookup[key] = button
 
-    # ------------------------------------------------------------------
-    # Game flow helpers
-    # ------------------------------------------------------------------
     def start_human_mode(self) -> None:
+        # Kick off human vs AI
         self.mode = GameMode.HUMAN_VS_AI
         pygame.display.set_caption("Sixteen - A Game of Tradition: Human vs AI")
         specs = [
@@ -699,6 +688,7 @@ class SixteenPygameApp:
         self._reset_human_game()
 
     def _reset_human_game(self) -> None:
+        # Reset board for human play
         self.game = GameRules()
         if self.human_player == 1:
             self.game.turn.to_move = 1
@@ -711,6 +701,7 @@ class SixteenPygameApp:
         self.message = "AI to move first..." if self.pending_ai else "Your turn."
 
     def _refresh_human_sidebar_labels(self) -> None:
+        # Update human sidebar text
         if "depth" in self.button_lookup:
             self.button_lookup["depth"].label = f"Depth: {self.minimax_depth}"
         if "switch" in self.button_lookup:
@@ -718,6 +709,7 @@ class SixteenPygameApp:
             self.button_lookup["switch"].label = f"Play as: {color_desc}"
 
     def start_ai_vs_ai_mode(self) -> None:
+        # Launch AI vs AI mode
         self.mode = GameMode.AI_VS_AI
         pygame.display.set_caption("Sixteen - A Game of Tradition: AI vs AI")
         specs = [
@@ -733,6 +725,7 @@ class SixteenPygameApp:
         self._reset_ai_battle()
 
     def _reset_ai_battle(self) -> None:
+        # Reset the AI battle state
         self.game = GameRules()
         self.selected_origin = None
         self.highlight_moves = []
@@ -748,6 +741,7 @@ class SixteenPygameApp:
         self._refresh_ai_vs_ai_sidebar_labels()
 
     def _refresh_ai_vs_ai_sidebar_labels(self) -> None:
+        # Update AI battle buttons
         if "depth" in self.button_lookup:
             self.button_lookup["depth"].label = f"Minimax Depth: {self.ai_vs_ai_depth}"
         if "iter" in self.button_lookup:
@@ -756,6 +750,7 @@ class SixteenPygameApp:
             self.button_lookup["pause"].label = "Resume" if self.ai_vs_ai_pause else "Pause"
 
     def toggle_player_color(self) -> None:
+        # Swap which side the human plays
         if self.mode != GameMode.HUMAN_VS_AI:
             return
         self.human_player = opponent(self.human_player)
@@ -766,6 +761,7 @@ class SixteenPygameApp:
         self.message = f"You now play as {color_desc}."
 
     def set_ai_depth(self, depth: int) -> None:
+        # Adjust minimax depth
         self.minimax_depth = depth
         if self.mode == GameMode.HUMAN_VS_AI:
             self.agent = MinimaxAgent(self.ai_player, depth=depth)
@@ -775,6 +771,7 @@ class SixteenPygameApp:
             self._refresh_human_sidebar_labels()
 
     def undo(self) -> None:
+        # Step back one turn
         if self.mode != GameMode.HUMAN_VS_AI:
             return
         if len(self.history) <= 1:
@@ -788,6 +785,7 @@ class SixteenPygameApp:
         self.pending_ai = False
 
     def _cycle_human_depth(self) -> None:
+        # Rotate through depth presets
         options = [1, 3, 5, 7]
         try:
             idx = options.index(self.minimax_depth)
@@ -797,6 +795,7 @@ class SixteenPygameApp:
         self.set_ai_depth(next_depth)
 
     def _cycle_ai_depth(self) -> None:
+        # Cycle AI vs AI depth
         options = [1, 3, 5, 7]
         try:
             idx = options.index(self.ai_vs_ai_depth)
@@ -809,6 +808,7 @@ class SixteenPygameApp:
         self.message = f"Minimax depth now {self.ai_vs_ai_depth}."
 
     def _cycle_mcts_iterations(self) -> None:
+        # Cycle rollout counts
         options = [50, 100, 200, 300]
         try:
             idx = options.index(self.mcts_iterations)
@@ -821,12 +821,14 @@ class SixteenPygameApp:
         self.message = f"MCTS iterations now {self.mcts_iterations}."
 
     def _toggle_ai_pause(self) -> None:
+        # Pause or resume AI battle
         self.ai_vs_ai_pause = not self.ai_vs_ai_pause
         self._refresh_ai_vs_ai_sidebar_labels()
         self.message = "Simulation paused." if self.ai_vs_ai_pause else "Simulation resumed."
         self.last_ai_tick = pygame.time.get_ticks()
 
     def _return_to_menu(self) -> None:
+        # Drop back to the main menu
         self.mode = None
         pygame.display.set_caption("Sixteen - A Game of Tradition")
         self._set_sidebar_buttons([])
@@ -837,14 +839,13 @@ class SixteenPygameApp:
         self.ai_vs_ai_pause = False
 
     def _push_history(self) -> None:
+        # Store snapshots for undo
         self.history.append(copy.deepcopy(self.game))
         if len(self.history) > 40:
             self.history = self.history[-40:]
 
-    # ------------------------------------------------------------------
-    # Input handling
-    # ------------------------------------------------------------------
     def handle_click(self, pos: Tuple[int, int]) -> None:
+        # Handle clicks based on current mode
         if self.current_user is None:
             return
         if self.mode is None:
@@ -930,6 +931,7 @@ class SixteenPygameApp:
             self.pending_ai = True
 
     def _handle_button(self, button: Button) -> None:
+        # Act on sidebar button press
         if button.key == "logout":
             self.logout()
             return
@@ -959,6 +961,7 @@ class SixteenPygameApp:
                 self._toggle_ai_pause()
 
     def _handle_menu_button(self, button: Button) -> None:
+        # Handle main menu button click
         if button.key == "menu_human":
             self.start_human_mode()
         elif button.key == "menu_ai":
@@ -967,12 +970,11 @@ class SixteenPygameApp:
             self.logout()
 
     def _must_continue(self) -> bool:
+        # Check capture continuation rule
         return self.game.turn.pending_capture_from is not None and self.game.turn.to_move == self.human_player
 
-    # ------------------------------------------------------------------
-    # AI turn
-    # ------------------------------------------------------------------
     def update_ai(self) -> None:
+        # Advance AI turns when needed
         if self.current_user is None:
             return
         if self.mode == GameMode.HUMAN_VS_AI:
@@ -981,6 +983,7 @@ class SixteenPygameApp:
             self._update_ai_battle()
 
     def _update_human_ai(self) -> None:
+        # Let AI respond in human games
         if not self.pending_ai:
             return
         if self.game.turn.to_move != self.ai_player:
@@ -1021,6 +1024,7 @@ class SixteenPygameApp:
                 self.message += " | Your turn."
 
     def _update_ai_battle(self) -> None:
+        # Advance AI vs AI playback
         if self.ai_vs_ai_pause:
             return
 
@@ -1070,10 +1074,8 @@ class SixteenPygameApp:
         else:
             self.last_ai_tick = pygame.time.get_ticks()
 
-    # ------------------------------------------------------------------
-    # Rendering helpers
-    # ------------------------------------------------------------------
     def draw(self) -> None:
+        # Render current screen state
         if self.current_user is None:
             self._draw_auth_screen()
             return
@@ -1101,6 +1103,7 @@ class SixteenPygameApp:
         self._draw_highlights()
         self._draw_ui()
 
+    # Draw text with manual wrapping
     def _render_wrapped_text(
         self,
         text: str,
@@ -1161,6 +1164,7 @@ class SixteenPygameApp:
         return y
 
     def _draw_menu(self) -> None:
+        # Render the main menu
         self.screen.fill((21, 34, 45))
         title_surface = self.font_large.render("Sixteen - A Game of Tradition", True, (236, 239, 241))
         title_rect = title_surface.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
@@ -1186,6 +1190,7 @@ class SixteenPygameApp:
         self.screen.blit(footer_text, footer_rect)
 
     def _draw_auth_screen(self) -> None:
+        # Draw the login/register screen
         self.screen.fill((21, 34, 45))
 
         panel_rect = self.auth_panel_rect
@@ -1265,6 +1270,7 @@ class SixteenPygameApp:
         self.screen.blit(footer_text, footer_rect)
 
     def _draw_edges(self) -> None:
+        # Draw board connections
         for node, edges in RAW_ADJACENCY.items():
             x1, y1 = NODE_COORDS[node]
             for neighbor in edges:
@@ -1275,11 +1281,13 @@ class SixteenPygameApp:
                 pygame.draw.line(self.screen, LINE_COLOR, (x1, y1), (x2, y2), 3)
 
     def _draw_nodes(self) -> None:
+        # Draw board node markers
         for node, (x, y) in NODE_COORDS.items():
             pygame.draw.circle(self.screen, EMPTY_NODE_FILL, (x, y), BASE_RADIUS)
             pygame.draw.circle(self.screen, (84, 110, 122), (x, y), BASE_RADIUS, 1)
 
     def _draw_pieces(self) -> None:
+        # Draw pieces and selection
         snapshot = self.game.board.snapshot()
         for node, occupant in snapshot.items():
             if occupant is None:
@@ -1294,6 +1302,7 @@ class SixteenPygameApp:
             pygame.draw.circle(self.screen, SELECTION_COLOR, (x, y), PIECE_RADIUS + 5, width=3)
 
     def _draw_highlights(self) -> None:
+        # Show available move destinations
         for option in self.highlight_moves:
             target = option.target
             x, y = NODE_COORDS[target]
@@ -1308,6 +1317,7 @@ class SixteenPygameApp:
             self.screen.blit(surf, (x - PIECE_RADIUS * 1.5, y - PIECE_RADIUS * 1.5))
 
     def _draw_ui(self) -> None:
+        # Update sidebar panel
         mouse_pos = pygame.mouse.get_pos()
 
         text_x = SIDEBAR_PADDING + 16
@@ -1400,10 +1410,8 @@ class SixteenPygameApp:
         for button in self.sidebar_buttons:
             button.draw(self.screen, self.font_small, button.contains(mouse_pos))
 
-    # ------------------------------------------------------------------
-    # Utility helpers
-    # ------------------------------------------------------------------
     def _node_at(self, pos: Tuple[int, int]) -> Optional[int]:
+        # Locate a node by mouse position
         mx, my = pos
         for node, (x, y) in NODE_COORDS.items():
             if (mx - x) ** 2 + (my - y) ** 2 <= (PIECE_RADIUS + 6) ** 2:
@@ -1412,14 +1420,13 @@ class SixteenPygameApp:
 
     @staticmethod
     def _format_move_message(actor: str, origin: int, target: int, captured: Optional[int]) -> str:
+        # Build readable move text
         if captured is None:
             return f"{actor} moved {origin} → {target}"
         return f"{actor} captured at {captured} ( {origin} → {target} )"
 
-    # ------------------------------------------------------------------
-    # Main loop
-    # ------------------------------------------------------------------
     def run(self) -> None:
+        # Main event/game loop
         running = True
         while running:
             if self.current_user is None:
@@ -1455,12 +1462,13 @@ class SixteenPygameApp:
 
 
 def main() -> int:
+    # Entry point helper
     app = SixteenPygameApp()
     app.run()
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - manual execution
+if __name__ == "__main__":
     main()
 
 

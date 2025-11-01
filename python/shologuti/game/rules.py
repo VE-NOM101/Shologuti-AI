@@ -1,5 +1,3 @@
-"""Higher-level rule helpers built on top of :mod:`shologuti.game.board`."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,28 +8,27 @@ from .board import BoardState, MoveResult, PlayerId
 
 @dataclass
 class TurnState:
-    """Tracks per-match turn metadata beyond the raw board."""
-
-    to_move: PlayerId = 2  # Green traditionally opens.
+    to_move: PlayerId = 2
     pending_capture_from: Optional[int] = None
 
     def swap_turn(self) -> None:
+        # Reset capture chain and swap side
         self.pending_capture_from = None
         self.to_move = 2 if self.to_move == 1 else 1
 
 
 class GameRules:
-    """Encapsulates turn enforcement and capture chaining requirements."""
-
     def __init__(self) -> None:
         self.board = BoardState()
         self.turn = TurnState()
 
     def reset(self) -> None:
+        # Bring the match back to the start state
         self.board.reset()
         self.turn = TurnState()
 
     def apply_player_move(self, player: PlayerId, origin: int, target: int) -> MoveResult:
+        # Enforce turn order and capture chains
         if player != self.turn.to_move:
             return MoveResult(legal=False, error="not_your_turn")
 
@@ -57,6 +54,7 @@ class GameRules:
         return result
 
     def remaining(self, player: PlayerId) -> int:
+        # Expose piece counts for UI/AI
         return self.board.remaining(player)
 
 
