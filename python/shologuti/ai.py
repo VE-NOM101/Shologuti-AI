@@ -48,13 +48,16 @@ def _generate_moves(state: GameRules, for_player: Optional[PlayerId] = None) -> 
 
     player = state.turn.to_move if for_player is None else for_player
 
-    if state.turn.pending_capture_from is not None and player == state.turn.to_move:
-        origin = state.turn.pending_capture_from
-        forced = state.board.capture_moves(origin, player)
-        if forced:
-            return forced
-        # Defensive fallback – should not occur, but return any simple moves to avoid deadlocks.
-        return state.board.simple_moves(origin, player)
+    enforce_origin: Optional[int] = None
+    if player == state.turn.to_move:
+        enforce_origin = state.turn.pending_capture_from
+
+    if enforce_origin is not None:
+        # If the expected piece is missing, no legal continuations remain.
+        if state.board.occupant(enforce_origin) != player:
+            return []
+        forced = state.board.capture_moves(enforce_origin, player)
+        return forced
 
     captures: List[MoveOption] = []
     quiets: List[MoveOption] = []
@@ -101,7 +104,7 @@ class MinimaxAgent:
 
             score = self._minimax(child_state, self.depth - 1, alpha, beta)
 
-            if score > best_score:
+            if score > best_score or best_move is None:
                 best_score = score
                 best_move = option
 
@@ -133,29 +136,37 @@ class MinimaxAgent:
 
         if maximizing:
             value = -math.inf
+            legal_branch_found = False
             for option in moves:
                 child_state = copy.deepcopy(state)
                 result = child_state.apply_player_move(player_to_move, option.origin, option.target)
                 if not result.legal:
                     continue
 
+                legal_branch_found = True
                 value = max(value, self._minimax(child_state, depth - 1, alpha, beta))
                 alpha = max(alpha, value)
                 if beta <= alpha:
                     break
+            if not legal_branch_found:
+                return self._evaluate(state)
             return value
 
         value = math.inf
+        legal_branch_found = False
         for option in moves:
             child_state = copy.deepcopy(state)
             result = child_state.apply_player_move(player_to_move, option.origin, option.target)
             if not result.legal:
                 continue
 
+            legal_branch_found = True
             value = min(value, self._minimax(child_state, depth - 1, alpha, beta))
             beta = min(beta, value)
             if beta <= alpha:
                 break
+        if not legal_branch_found:
+            return self._evaluate(state)
         return value
 
     def _evaluate(self, state: GameRules) -> Score:
@@ -220,7 +231,7 @@ class MCTSAgent:
     def __init__(
         self,
         player: PlayerId,
-        iterations: int = 500,
+        iterations: int = 100,
         exploration_constant: float = math.sqrt(2.0),
     ) -> None:
         self.player = player

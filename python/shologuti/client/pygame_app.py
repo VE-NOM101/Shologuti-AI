@@ -308,7 +308,7 @@ class SixteenPygameApp:
         self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
 
         self.ai_vs_ai_depth: int = 3
-        self.mcts_iterations: int = 200
+        self.mcts_iterations: int = 100
         self.ai_vs_ai_pause: bool = False
         self.ai_move_delay_ms: int = 800
         self.last_ai_tick: int = pygame.time.get_ticks()
@@ -788,7 +788,7 @@ class SixteenPygameApp:
         self.pending_ai = False
 
     def _cycle_human_depth(self) -> None:
-        options = [1, 3, 5]
+        options = [1, 3, 5, 7]
         try:
             idx = options.index(self.minimax_depth)
         except ValueError:
@@ -809,7 +809,7 @@ class SixteenPygameApp:
         self.message = f"Minimax depth now {self.ai_vs_ai_depth}."
 
     def _cycle_mcts_iterations(self) -> None:
-        options = [200, 500, 800, 1200]
+        options = [50, 100, 200, 300]
         try:
             idx = options.index(self.mcts_iterations)
         except ValueError:
