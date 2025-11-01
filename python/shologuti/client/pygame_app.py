@@ -308,7 +308,7 @@ class SixteenPygameApp:
         self.agent = MinimaxAgent(self.ai_player, depth=self.minimax_depth)
 
         self.ai_vs_ai_depth: int = 3
-        self.mcts_iterations: int = 500
+        self.mcts_iterations: int = 200
         self.ai_vs_ai_pause: bool = False
         self.ai_move_delay_ms: int = 800
         self.last_ai_tick: int = pygame.time.get_ticks()
