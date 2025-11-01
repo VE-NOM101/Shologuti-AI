@@ -35,9 +35,12 @@ class GameRules:
         if player != self.turn.to_move:
             return MoveResult(legal=False, error="not_your_turn")
 
-        require_capture = self.turn.pending_capture_from is not None
-        if require_capture and origin != self.turn.pending_capture_from:
-            return MoveResult(legal=False, error="must_continue_capture")
+        forced_origin = self.turn.pending_capture_from
+        require_capture = forced_origin is not None
+
+        if forced_origin is not None:
+            if origin != forced_origin:
+                return MoveResult(legal=False, error="must_continue_capture")
 
         result = self.board.apply_move(player, origin, target, require_capture=require_capture)
         if not result.legal:

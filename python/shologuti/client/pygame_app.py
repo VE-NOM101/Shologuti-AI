@@ -873,10 +873,29 @@ class SixteenPygameApp:
 
         occupant = self.game.board.occupant(clicked)
         if occupant == self.human_player:
+            forced_chain = self._must_continue()
+            if forced_chain:
+                if clicked != self.game.turn.pending_capture_from:
+                    self.message = "You must continue the capture with the same piece."
+                    self.selected_origin = None
+                    self.highlight_moves = []
+                    return
+                moves = self.game.board.capture_moves(clicked, self.human_player)
+                self.selected_origin = clicked
+                self.highlight_moves = moves
+                return
+
+            capture_moves = self.game.board.capture_moves(clicked, self.human_player)
+            simple_moves = self.game.board.simple_moves(clicked, self.human_player)
+
+            moves = capture_moves + simple_moves if capture_moves else simple_moves
+
             self.selected_origin = clicked
-            self.highlight_moves = self.game.board.legal_moves(
-                clicked, self.human_player, require_capture=self._must_continue()
-            )
+            self.highlight_moves = moves
+            if not moves:
+                self.message = "No legal moves for that piece."
+            elif self.message == "No legal moves for that piece.":
+                self.message = None
             return
 
         if self.selected_origin is None:

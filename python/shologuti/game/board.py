@@ -94,10 +94,10 @@ class BoardState:
         captures = self.capture_moves(origin, player)
         if require_capture:
             return captures
+        simple = self.simple_moves(origin, player)
         if captures:
-            # Captures are possible but optional by default.
-            return captures + self.simple_moves(origin, player)
-        return self.simple_moves(origin, player)
+            return captures + simple
+        return simple
 
     def apply_move(
         self,
@@ -141,5 +141,15 @@ class BoardState:
         if green == 0:
             return 1
         return None
+
+    def any_capture_available(self, player: PlayerId) -> bool:
+        """Return ``True`` if ``player`` has at least one capturing move."""
+
+        for origin, occupant in self._slots.items():
+            if occupant != player:
+                continue
+            if self.capture_moves(origin, player):
+                return True
+        return False
 
 

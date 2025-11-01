@@ -47,18 +47,30 @@ def _generate_moves(state: GameRules, for_player: Optional[PlayerId] = None) -> 
     """Enumerate all legal moves for the player who is about to act."""
 
     player = state.turn.to_move if for_player is None else for_player
-    snapshot = state.board.snapshot()
 
     if state.turn.pending_capture_from is not None and player == state.turn.to_move:
         origin = state.turn.pending_capture_from
-        return state.board.legal_moves(origin, player, require_capture=True)
+        forced = state.board.capture_moves(origin, player)
+        if forced:
+            return forced
+        # Defensive fallback – should not occur, but return any simple moves to avoid deadlocks.
+        return state.board.simple_moves(origin, player)
 
-    moves: List[MoveOption] = []
+    captures: List[MoveOption] = []
+    quiets: List[MoveOption] = []
+    snapshot = state.board.snapshot()
     for origin, occupant_id in snapshot.items():
         if occupant_id != player:
             continue
-        moves.extend(state.board.legal_moves(origin, player))
-    return moves
+        capture_moves = state.board.capture_moves(origin, player)
+        if capture_moves:
+            captures.extend(capture_moves)
+        else:
+            quiets.extend(state.board.simple_moves(origin, player))
+
+    if captures:
+        return captures
+    return quiets
 
 
 class MinimaxAgent:
@@ -260,8 +272,10 @@ class MCTSAgent:
 
     def _rollout(self, state: GameRules) -> float:
         simulation = copy.deepcopy(state)
+        steps = 0
+        max_steps = 200
 
-        while True:
+        while steps < max_steps:
             winner = _winner_for_state(simulation)
             if winner is not None:
                 if winner == self.player:
@@ -279,6 +293,9 @@ class MCTSAgent:
             result = simulation.apply_player_move(player_to_move, move.origin, move.target)
             if not result.legal:
                 return 0.5
+            steps += 1
+
+        return 0.5
 
     @property
     def description(self) -> str:
